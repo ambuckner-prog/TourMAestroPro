@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Modality, Type } from "@google/genai";
-import { AspectRatio, ImageSize } from "../types";
+import { AspectRatio, ImageSize, VenueDocument } from "../types";
 
 // Ensure process.env.API_KEY is available or handled by the component layer via window.aistudio for Veo
 const apiKey = process.env.API_KEY || ''; 
@@ -143,6 +143,68 @@ export const askSearch = async (query: string) => {
   };
 };
 
+// --- VENUE DOC SCRAPER ---
+export const findVenueDocuments = async (venue: string, city: string): Promise<VenueDocument[]> => {
+  try {
+    // Enhanced prompt prioritizing Stage Plots and Technical Riders
+    const query = `Find "Technical Rider" PDF, "Stage Plot" PDF, or "Production Pack" PDF for ${venue} in ${city}. Focus on official venue technical specifications.`;
+    const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-image-preview', 
+        contents: query,
+        config: {
+            tools: [{ googleSearch: {} }]
+        }
+    });
+
+    const docs: VenueDocument[] = [];
+    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+
+    chunks.forEach((chunk, index) => {
+        if (chunk.web && chunk.web.uri) {
+            const uri = chunk.web.uri.toLowerCase();
+            const title = chunk.web.title || `Document ${index + 1}`;
+            const lowerTitle = title.toLowerCase();
+            
+            // Refined filtering and typing
+            if (
+                uri.endsWith('.pdf') || 
+                lowerTitle.includes('tech') || 
+                lowerTitle.includes('production') || 
+                lowerTitle.includes('rider') || 
+                lowerTitle.includes('specs') ||
+                lowerTitle.includes('plot')
+            ) {
+                let docType: VenueDocument['type'] = 'Other';
+                if (lowerTitle.includes('plot')) docType = 'Plot';
+                else if (lowerTitle.includes('guide') || lowerTitle.includes('facility')) docType = 'Facility Guide';
+                else if (lowerTitle.includes('tech') || lowerTitle.includes('rider') || lowerTitle.includes('production')) docType = 'Tech Pack';
+
+                docs.push({
+                    id: Math.random().toString(36).substr(2, 9),
+                    title: chunk.web.title || "Venue Document",
+                    url: chunk.web.uri,
+                    type: docType
+                });
+            }
+        }
+    });
+
+    // Deduplicate by URL
+    const uniqueDocs = Array.from(new Map(docs.map(item => [item.url, item])).values());
+    
+    // Sort to prioritize Plots and Tech Packs
+    uniqueDocs.sort((a, b) => {
+        const priority = { 'Tech Pack': 1, 'Plot': 2, 'Facility Guide': 3, 'Other': 4 };
+        return (priority[a.type] || 4) - (priority[b.type] || 4);
+    });
+
+    return uniqueDocs.slice(0, 5); 
+  } catch (error) {
+    console.error("Doc scraping failed", error);
+    return [];
+  }
+};
+
 // --- IMAGE ANALYSIS (Pro) ---
 export const analyzeImage = async (base64Image: string, prompt: string) => {
   const response = await ai.models.generateContent({
@@ -159,12 +221,6 @@ export const analyzeImage = async (base64Image: string, prompt: string) => {
 
 // --- IMAGE GENERATION (Pro + Size + Ratio) ---
 export const generateImage = async (prompt: string, aspectRatio: AspectRatio, size: ImageSize) => {
-  // Use checkVeoKey logic if high quality implies paid tier, but generally Pro Image Preview works with standard key
-  // However, Veo rules usually apply to high-end media generation in these contexts.
-  // Using gemini-3-pro-image-preview
-  
-  // Note: The prompt asks for size and aspect ratio controls.
-  // This model uses generateContent with imageConfig
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-image-preview',
     contents: { parts: [{ text: prompt }] },
@@ -176,7 +232,6 @@ export const generateImage = async (prompt: string, aspectRatio: AspectRatio, si
     }
   });
 
-  // Extract image
   for (const part of response.candidates?.[0]?.content?.parts || []) {
     if (part.inlineData) {
       return `data:image/png;base64,${part.inlineData.data}`;
@@ -207,35 +262,25 @@ export const editImage = async (base64Image: string, prompt: string) => {
 
 // --- VIDEO GENERATION (Veo) ---
 export const generateVideo = async (prompt: string, aspectRatio: '16:9' | '9:16', imageBase64?: string): Promise<string | null> => {
-  // MUST Ensure API Key is selected for Veo
   await checkVeoKey();
-  
-  // Re-instantiate to capture the potentially newly selected key in the environment/session
-  // (Though in a real browser env, the key injection happens at network level if using the specific window.aistudio flow,
-  // we follow the prompt's instruction to create a new instance if needed, but here we just proceed assuming env injection works or we rely on the global key if available).
-  // The instruction says: "Create a new GoogleGenAI instance right before making an API call to ensure it always uses the most up-to-date API key"
-  
   const tempAi = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
   let operation;
   
   if (imageBase64) {
-    // Image to Video
     operation = await tempAi.models.generateVideos({
       model: 'veo-3.1-fast-generate-preview',
       prompt: prompt || "Animate this image", 
       image: {
         imageBytes: imageBase64,
-        mimeType: 'image/png' // Assuming PNG for simplicity, could be derived
+        mimeType: 'image/png' 
       },
       config: {
         numberOfVideos: 1,
-        resolution: '720p', // Fast preview usually 720p
+        resolution: '720p', 
         aspectRatio: aspectRatio
       }
     });
   } else {
-    // Text to Video
     operation = await tempAi.models.generateVideos({
       model: 'veo-3.1-fast-generate-preview',
       prompt: prompt,
@@ -247,16 +292,13 @@ export const generateVideo = async (prompt: string, aspectRatio: '16:9' | '9:16'
     });
   }
 
-  // Poll for completion
   while (!operation.done) {
-    await new Promise(resolve => setTimeout(resolve, 5000)); // 5s poll
+    await new Promise(resolve => setTimeout(resolve, 5000)); 
     operation = await tempAi.operations.getVideosOperation({ operation: operation });
   }
 
   const uri = operation.response?.generatedVideos?.[0]?.video?.uri;
   if (!uri) return null;
-
-  // Append key for fetching
   return `${uri}&key=${process.env.API_KEY}`;
 };
 
@@ -277,7 +319,7 @@ export const generateSpeech = async (text: string): Promise<string | null> => {
       responseModalities: [Modality.AUDIO],
       speechConfig: {
         voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: 'Kore' }, // Professional voice
+          prebuiltVoiceConfig: { voiceName: 'Kore' }, 
         },
       },
     },
@@ -289,7 +331,6 @@ export const generateSpeech = async (text: string): Promise<string | null> => {
 
 
 // --- AUDIO DECODING HELPERS ---
-// Decodes base64 string to Uint8Array
 function decode(base64: string) {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -300,7 +341,6 @@ function decode(base64: string) {
   return bytes;
 }
 
-// Decodes raw PCM data to AudioBuffer
 async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,

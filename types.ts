@@ -19,6 +19,7 @@ export enum View {
   ACCOUNTING = 'ACCOUNTING',
   ATTACHMENTS = 'ATTACHMENTS',
   SETTINGS = 'SETTINGS', // Back Office
+  INBOX = 'INBOX', // New Simulated Inbox
   
   // Management
   TEAM_MGMT = 'TEAM_MGMT',
@@ -38,6 +39,32 @@ export enum UserRole {
   CREW = 'CREW', // Read only / Limited access
 }
 
+export type AdvanceStatus = 'NOT_STARTED' | 'INITIAL_SENT' | 'IN_PROGRESS' | 'CONFIRMED';
+
+export interface AdvanceTemplateField {
+  id: string;
+  label: string; // e.g. "Shore Power"
+  defaultValue: string; // e.g. "Do you provide 60A?"
+  category: 'Production' | 'Hospitality' | 'Security' | 'Merch' | 'Other';
+}
+
+export interface AdvanceTemplate {
+  id: string;
+  tourId: string; // or 'SYSTEM' for defaults
+  name: string; // e.g. "Club Advance", "Festival Advance"
+  description?: string;
+  fields: AdvanceTemplateField[];
+}
+
+export interface UserDocument {
+  id: string;
+  name: string;
+  type: 'Passport' | 'Visa' | 'Contract' | 'ID' | 'Medical' | 'Other';
+  url: string;
+  expiryDate?: string;
+  uploadedAt: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -47,7 +74,30 @@ export interface User {
   assignedTourIds: string[];
   phone?: string;
   jobTitle?: string;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED'; // New field for approval workflow
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'BLOCKED';
+  
+  // Crew Profile Extensions
+  address?: string;
+  cityStateZip?: string;
+  country?: string;
+  birthDate?: string;
+  
+  // Emergency Contact
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactRelation?: string;
+
+  // Travel & Personal
+  passportNumber?: string;
+  passportExpiry?: string;
+  citizenship?: string;
+  frequentFlyer?: string;
+  seatingPreference?: 'Window' | 'Aisle';
+  dietaryRestrictions?: string;
+  shirtSize?: string;
+  
+  // Documents
+  documents?: UserDocument[];
 }
 
 export interface Tour {
@@ -58,6 +108,7 @@ export interface Tour {
   crewIds: string[]; // Assigned staff
   storageUsed: number; // in bytes
   storageLimit: number; // in bytes (5GB default)
+  budget: number; // Total financial budget
 }
 
 export interface Hotel {
@@ -99,6 +150,22 @@ export interface ChatMessage {
   isLoadingAudio?: boolean;
 }
 
+export interface ScheduleItem {
+  id: string;
+  title: string;
+  startTime: string; // HH:mm format
+  endTime?: string; // HH:mm format
+  type: 'Production' | 'Travel' | 'Show' | 'Press' | 'Other';
+  details?: string;
+}
+
+export interface VenueDocument {
+  id: string;
+  title: string;
+  url: string;
+  type: 'Tech Pack' | 'Plot' | 'Facility Guide' | 'Other';
+}
+
 export interface TourDate {
   id: string;
   tourId: string;
@@ -106,22 +173,36 @@ export interface TourDate {
   venue: string;
   date: string;
   status: 'Confirmed' | 'Pending' | 'Hold';
+  advanceStatus?: AdvanceStatus; // New field
   capacity: number;
   address?: string;
   confirmationNumber?: string;
+  
+  // Ticket Sales
+  ticketsSold?: number;
+  grossRevenue?: number;
+
+  // Contacts
   venueContactName?: string;
   venueContactPhone?: string;
+  venueContactEmail?: string; // New
   venuePhone?: string; // Main venue number
+  
   venueNotes?: string; // Specific instructions/reminders for the venue
+  schedule?: ScheduleItem[]; // Daily schedule items
+  documents?: VenueDocument[]; // New: Scraped or uploaded docs
+  setlistId?: string; // Linked Setlist ID
 }
 
 export interface GuestRequest {
   id: string;
+  tourId: string;
+  dateId: string; // Linked to TourDate.id
   name: string;
   affiliation: string;
   quantity: number;
   status: 'Pending' | 'Approved' | 'Denied';
-  showId: string;
+  notes?: string;
 }
 
 export interface Song {
@@ -139,13 +220,15 @@ export interface Setlist {
   songs: Song[];
 }
 
-export interface Expense {
+export interface FinanceItem {
   id: string;
+  tourId: string;
+  type: 'INCOME' | 'EXPENSE';
   category: string;
-  description: string;
   amount: number;
+  paySource: string; // e.g. "Business Amex", "Wire", "Cash"
+  description: string;
   date: string;
-  currency?: string;
 }
 
 export interface Note {
@@ -175,5 +258,34 @@ export interface VeoGenerationState {
   videoUri?: string;
 }
 
+export interface EmailLog {
+  id: string;
+  to: string;
+  subject: string;
+  body: string; // Stored for debug
+  timestamp: string;
+  status: 'SENT' | 'FAILED' | 'QUEUED';
+}
+
+export interface LoginLog {
+  id: string;
+  email: string;
+  status: 'SUCCESS' | 'FAILED' | 'BLOCKED';
+  timestamp: string;
+  ip: string; // Simulated
+  userAgent: string;
+}
+
+export interface SecurityLog {
+  id: string;
+  timestamp: string;
+  scanType: 'AUTOMATED' | 'MANUAL';
+  status: 'CLEAN' | 'WARNING' | 'CRITICAL';
+  details: string;
+  threatsFound: number;
+}
+
 export type AspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "9:16" | "16:9" | "21:9";
 export type ImageSize = "1K" | "2K" | "4K";
+
+export type EmailSystemStatus = 'ENABLED' | 'SIMULATION' | 'BLOCKED';

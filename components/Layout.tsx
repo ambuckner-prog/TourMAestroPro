@@ -1,12 +1,12 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, UserRole, Note } from '../types';
 import { useApp } from '../contexts/AppContext';
 import { 
   LayoutDashboard, Map, Calendar, CheckSquare, Send, Users, 
-  Music2, DollarSign, Paperclip, Globe, Video, Mic2, Menu, X, 
+  Music2, PoundSterling, Paperclip, Globe, Video, Mic2, Menu, X, 
   CalendarDays, ChevronDown, PlusCircle, LogOut, ArrowRight, Mic, 
-  Settings, Check, LayoutGrid
+  Settings, Check, LayoutGrid, ShieldAlert, Bell, Inbox
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -16,7 +16,7 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, children }) => {
-  const { currentUser, currentTour, tours, logout, selectTour, createTour } = useApp();
+  const { currentUser, currentTour, tours, logout, selectTour, createTour, notification, clearNotification, emailLogs } = useApp();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isTourDropdownOpen, setIsTourDropdownOpen] = React.useState(false);
   
@@ -39,7 +39,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, chi
       { id: View.ADVANCE, label: 'Advance', icon: Send },
       { id: View.GUEST_LIST, label: 'Guest List', icon: Users },
       { id: View.SETLIST, label: 'Set List', icon: Music2 },
-      { id: View.ACCOUNTING, label: 'Accounting', icon: DollarSign },
+      { id: View.ACCOUNTING, label: 'Accounting', icon: PoundSterling },
       { id: View.ATTACHMENTS, label: 'Attachments', icon: Paperclip },
     ] : [])
   ];
@@ -70,6 +70,28 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, chi
   return (
     <div className="flex h-screen bg-maestro-900 text-slate-100 overflow-hidden font-sans">
       
+      {/* --- NOTIFICATION TOAST --- */}
+      {notification && (
+          <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-2xl border flex items-center gap-3 animate-fadeIn transition-all max-w-sm ${
+              notification.type === 'success' ? 'bg-green-900/90 border-green-500/50 text-green-100' :
+              notification.type === 'error' ? 'bg-red-900/90 border-red-500/50 text-red-100' :
+              'bg-blue-900/90 border-blue-500/50 text-blue-100'
+          }`}>
+              <div className={`p-2 rounded-full ${
+                  notification.type === 'success' ? 'bg-green-800' :
+                  notification.type === 'error' ? 'bg-red-800' :
+                  'bg-blue-800'
+              }`}>
+                  <Bell className="w-4 h-4 text-white" />
+              </div>
+              <div className="flex-1">
+                  <h4 className="font-bold text-sm">{notification.message}</h4>
+                  {notification.subtext && <p className="text-xs opacity-80">{notification.subtext}</p>}
+              </div>
+              <button onClick={clearNotification} className="text-white/50 hover:text-white"><X className="w-4 h-4"/></button>
+          </div>
+      )}
+
       {/* --- LEFT SIDEBAR --- */}
       <aside className="hidden md:flex flex-col w-60 border-r border-maestro-700 bg-maestro-900 flex-shrink-0 z-20">
         
@@ -139,6 +161,22 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, chi
                 </button>
             ))}
             
+            {/* Inbox */}
+            <button
+                onClick={() => setCurrentView(View.INBOX)}
+                className={`w-full flex items-center justify-between px-4 py-2 text-sm font-medium transition-colors border-l-4 ${
+                    currentView === View.INBOX 
+                    ? 'border-blue-500 bg-blue-900/10 text-white' 
+                    : 'border-transparent text-slate-400 hover:text-slate-100 hover:bg-white/5'
+                }`}
+            >
+                <div className="flex items-center gap-3">
+                    <Inbox className="w-4 h-4 opacity-70" />
+                    <span>Inbox</span>
+                </div>
+                <span className="bg-blue-600 text-white text-[10px] px-1.5 rounded-full font-bold">{emailLogs.length}</span>
+            </button>
+
             {/* Back Office Society - AM BUCKNER ONLY */}
              {isMasterAdmin && (
                 <>
@@ -151,8 +189,8 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, chi
                             : 'border-transparent text-red-500 hover:bg-white/5'
                         }`}
                     >
-                        <Users className="w-4 h-4" />
-                        <span>Society System</span>
+                        <ShieldAlert className="w-4 h-4" />
+                        <span>Master Dashboard</span>
                     </button>
                 </>
             )}
@@ -253,6 +291,10 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, chi
               <span>{item.label}</span>
             </button>
           ))}
+          <button onClick={() => setCurrentView(View.INBOX)} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-white/10">
+              <Inbox className="w-5 h-5" />
+              <span>Inbox ({emailLogs.length})</span>
+          </button>
           <button onClick={logout} className="w-full text-red-400 mt-4 p-4 border border-red-900 rounded bg-red-900/20">Logout</button>
         </div>
       )}

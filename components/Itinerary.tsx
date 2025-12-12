@@ -72,13 +72,13 @@ export const Itinerary: React.FC = () => {
     if(!hotelForm.name) return;
     setIsAutoFilling(true);
     try {
-        const prompt = `Task: Find hotel details and extract booking info.
-        Input String: "${hotelForm.name}"
+        // Enhanced Prompt for GM and Confirmation Extraction
+        const prompt = `Task: Find detailed hotel information for: "${hotelForm.name}"
         
-        Instructions:
-        1. Search for the official address and main phone number for this hotel using Google Search.
-        2. Find the General Manager's name if available publicly, otherwise use "Front Desk".
-        3. EXTRACT CONFIRMATION NUMBER: Check the "Input String" above for a booking confirmation code (e.g., "#12345", "Conf: ABC", "Ref: 999", or alphanumeric codes like "HK882"). Extract ONLY the code. Do not search the web for this code. If no code is in the Input String, return "N/A".
+        Actions:
+        1. SEARCH Google for the hotel's official address and main phone number.
+        2. SEARCH for the name of the General Manager. If found, use it. If not found, default to "Front Desk".
+        3. ANALYZE the input string "${hotelForm.name}" for a confirmation number (e.g., "#12345", "Conf: ABC", "Ref: 999", or alphanumeric codes like "HK882"). EXTRACT ONLY the code. Do NOT search the web for this code. If no code is present in the input string, return "N/A".
 
         Return the result strictly in this format:
         Address: [Full Address]
@@ -231,7 +231,7 @@ export const Itinerary: React.FC = () => {
                                             onClick={handleHotelAutoFill}
                                             disabled={isAutoFilling || !hotelForm.name}
                                             className="bg-maestro-700 hover:bg-maestro-600 text-white p-3 rounded flex items-center gap-2 disabled:opacity-50"
-                                            title="Auto-Complete details from Search"
+                                            title="Auto-Complete: Address, Phone, GM & Conf #"
                                         >
                                             {isAutoFilling ? <Loader2 className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5 text-maestro-gold" />}
                                         </button>

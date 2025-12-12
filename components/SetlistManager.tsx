@@ -2,25 +2,41 @@
 import React, { useState, useEffect } from 'react';
 import { Song, Setlist } from '../types';
 import { generateText } from '../services/geminiService';
-import { Music2, ArrowUp, ArrowDown, Sparkles, Clock, ListMusic, Plus, Save, X, Trash2, Calendar } from 'lucide-react';
+import { Music2, ArrowUp, ArrowDown, Sparkles, Clock, ListMusic, Plus, Save, X, Trash2, Calendar, RefreshCw, Link as LinkIcon } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 
 export const SetlistManager: React.FC = () => {
-    const { masterSongs, addMasterSong, tourDates, currentTour, setlists, saveSetlist } = useApp();
+    const { masterSongs, addMasterSong, tourDates, currentTour, setlists, saveSetlist, selectedDateId, setSelectedDateId, updateTourDate } = useApp();
     
-    // Scope: 'MASTER' or tourDate.id
-    const [scope, setScope] = useState<string>('MASTER');
+    // Scope is derived from global selectedDateId. If null, we are editing Master.
+    const scope = selectedDateId || 'MASTER';
+    const activeDate = tourDates.find(d => d.id === selectedDateId);
+
     const [songs, setSongs] = useState<Song[]>([]);
 
     // Filter dates for current tour
-    const currentDates = tourDates.filter(d => d.tourId === currentTour?.id);
+    const currentDates = tourDates.filter(d => d.tourId === currentTour?.id).sort((a,b) => a.date.localeCompare(b.date));
 
     // Initial Load & Scope Change
     useEffect(() => {
         if (!currentTour) return;
 
-        const dateId = scope === 'MASTER' ? undefined : scope;
-        const savedSetlist = setlists.find(s => s.tourId === currentTour.id && s.dateId === dateId);
+        const targetDateId = scope === 'MASTER' ? undefined : scope;
+        let savedSetlist: Setlist | undefined;
+
+        if (scope === 'MASTER') {
+            savedSetlist = setlists.find(s => s.tourId === currentTour.id && !s.dateId);
+        } else {
+            // 1. Priority: Check if the TourDate object explicitly links to a Setlist ID
+            if (activeDate?.setlistId) {
+                savedSetlist = setlists.find(s => s.id === activeDate.setlistId);
+            }
+            
+            // 2. Fallback: Search for a setlist that references this dateId
+            if (!savedSetlist) {
+                savedSetlist = setlists.find(s => s.tourId === currentTour.id && s.dateId === targetDateId);
+            }
+        }
 
         if (savedSetlist) {
             setSongs(savedSetlist.songs);
@@ -29,9 +45,10 @@ export const SetlistManager: React.FC = () => {
             const master = setlists.find(s => s.tourId === currentTour.id && !s.dateId);
             setSongs(master ? [...master.songs] : []);
         } else {
+            // Master setlist is empty if not found
             setSongs([]);
         }
-    }, [scope, currentTour]); // Only reload when switching scopes
+    }, [scope, currentTour, setlists, activeDate]); // Added activeDate to dependencies to react to linkage changes
 
     // UI States
     const [isOptimizing, setIsOptimizing] = useState(false);
@@ -43,6 +60,10 @@ export const SetlistManager: React.FC = () => {
     const [newSong, setNewSong] = useState<Song>({ id: '', title: '', duration: '', bpm: 120, key: '' });
 
     // --- Actions ---
+
+    const handleScopeChange = (newScope: string) => {
+        setSelectedDateId(newScope === 'MASTER' ? null : newScope);
+    };
 
     const moveSong = (index: number, direction: 'up' | 'down') => {
         const newSongs = [...songs];
@@ -80,21 +101,43 @@ export const SetlistManager: React.FC = () => {
     const handleSaveSetlist = () => {
         if (!currentTour) return;
         
-        // Try to find existing ID to preserve it, or generate new
-        const existingSetlist = setlists.find(s => 
-            s.tourId === currentTour.id && 
-            (scope === 'MASTER' ? !s.dateId : s.dateId === scope)
-        );
+        const targetDateId = scope === 'MASTER' ? undefined : scope;
+        let setIdToUse = Math.random().toString(36).substr(2, 9);
+
+        // Determine ID to use (Update existing vs Create new)
+        if (targetDateId && activeDate?.setlistId) {
+            // If the active date already has a linked setlist, force update that specific setlist
+            setIdToUse = activeDate.setlistId;
+        } else {
+            // Otherwise try to find one by date reference
+            const existingByDate = setlists.find(s => s.tourId === currentTour.id && s.dateId === targetDateId);
+            if (existingByDate) setIdToUse = existingByDate.id;
+        }
 
         const newSetlist: Setlist = {
-            id: existingSetlist ? existingSetlist.id : Math.random().toString(36).substr(2, 9),
+            id: setIdToUse,
             tourId: currentTour.id,
-            dateId: scope === 'MASTER' ? undefined : scope,
+            dateId: targetDateId,
             songs: songs
         };
 
+        // 1. Save the Setlist object
         saveSetlist(newSetlist);
-        alert(`Successfully saved ${scope === 'MASTER' ? 'Master Setlist' : 'Show Setlist'}.`);
+
+        // 2. IMPORTANT: Update the TourDate object to explicitly link to this setlist ID
+        if (targetDateId) {
+            updateTourDate(targetDateId, { setlistId: newSetlist.id });
+        }
+
+        alert(`Successfully saved ${scope === 'MASTER' ? 'Master Setlist' : `${activeDate?.city} Setlist`} and linked to itinerary.`);
+    };
+
+    const handleResetToMaster = () => {
+        if (scope === 'MASTER') return;
+        if (window.confirm("Replace this show's setlist with the Master Setlist? Current changes to this date will be lost.")) {
+            const master = setlists.find(s => s.tourId === currentTour?.id && !s.dateId);
+            setSongs(master ? [...master.songs] : []);
+        }
     };
 
     const handleOptimize = async () => {
@@ -125,7 +168,19 @@ export const SetlistManager: React.FC = () => {
         <div className="space-y-6">
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-white">Setlist Manager</h1>
+                    <h1 className="text-3xl font-bold text-white flex items-center gap-2">
+                        Setlist Manager
+                        {scope !== 'MASTER' && (
+                            <span className="text-sm bg-maestro-accent px-2 py-1 rounded text-white font-normal uppercase tracking-wider flex items-center gap-1">
+                                {activeDate?.city}
+                                {activeDate?.setlistId && (
+                                    <span title="Linked to Date" className="flex items-center">
+                                        <LinkIcon className="w-3 h-3 text-white/70" />
+                                    </span>
+                                )}
+                            </span>
+                        )}
+                    </h1>
                     <p className="text-slate-400">Total Duration: {formatTotal(totalDuration)} • {songs.length} Songs</p>
                 </div>
                 
@@ -134,7 +189,7 @@ export const SetlistManager: React.FC = () => {
                     <Calendar className="w-5 h-5 text-maestro-accent ml-2" />
                     <select 
                         value={scope} 
-                        onChange={(e) => setScope(e.target.value)}
+                        onChange={(e) => handleScopeChange(e.target.value)}
                         className="bg-transparent text-white font-bold text-sm outline-none cursor-pointer pr-4"
                     >
                         <option value="MASTER" className="bg-maestro-800">Master Setlist (Default)</option>
@@ -176,6 +231,15 @@ export const SetlistManager: React.FC = () => {
 
                 {/* Create New Song Toggle */}
                 <div className="flex gap-2">
+                    {scope !== 'MASTER' && (
+                        <button 
+                            onClick={handleResetToMaster}
+                            className="bg-maestro-900 border border-maestro-700 hover:border-red-500 text-slate-400 hover:text-red-400 px-3 py-2.5 rounded font-bold text-sm flex items-center justify-center gap-2"
+                            title="Reset to Master Template"
+                        >
+                            <RefreshCw className="w-4 h-4" />
+                        </button>
+                    )}
                     <button 
                         onClick={() => setIsCreatingSong(true)}
                         className="bg-maestro-900 border border-maestro-700 hover:border-maestro-accent text-slate-300 px-4 py-2.5 rounded font-bold text-sm flex items-center justify-center gap-2"
@@ -184,9 +248,10 @@ export const SetlistManager: React.FC = () => {
                     </button>
                     <button 
                         onClick={handleSaveSetlist}
-                        className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded font-bold text-sm flex items-center justify-center gap-2"
+                        className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded font-bold text-sm flex items-center justify-center gap-2 shadow-lg"
                     >
-                        <Save className="w-4 h-4" /> Save Setlist
+                        <Save className="w-4 h-4" /> 
+                        {scope === 'MASTER' ? 'Save Master' : `Save for ${activeDate?.city}`}
                     </button>
                 </div>
             </div>

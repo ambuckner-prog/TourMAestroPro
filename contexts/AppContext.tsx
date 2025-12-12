@@ -1,6 +1,12 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, Tour, UserRole, TourDate, Hotel, TravelItem, Note, Song, Setlist } from '../types';
+import { User, Tour, UserRole, TourDate, Hotel, TravelItem, Note, Song, Setlist, EmailLog, GuestRequest, EmailSystemStatus, LoginLog, FinanceItem, SecurityLog, UserDocument, AdvanceTemplate } from '../types';
+
+interface Notification {
+  type: 'success' | 'error' | 'info';
+  message: string;
+  subtext?: string;
+}
 
 interface AppContextType {
   currentUser: User | null;
@@ -13,17 +19,42 @@ interface AppContextType {
   notes: Note[];
   masterSongs: Song[];
   setlists: Setlist[];
-  selectedDateId: string | null; 
-  login: (email: string, password?: string) => { success: boolean, message?: string };
+  guestRequests: GuestRequest[];
+  financeItems: FinanceItem[];
+  advanceTemplates: AdvanceTemplate[]; // New
+  selectedDateId: string | null;
+  emailLogs: EmailLog[];
+  loginLogs: LoginLog[];
+  securityLogs: SecurityLog[];
+  emailSystemStatus: EmailSystemStatus;
+  notification: Notification | null; // Global notification
+  isScanning: boolean;
+  
+  login: (email: string, password?: string) => Promise<{ success: boolean, message?: string }>;
   logout: () => void;
-  register: (name: string, email: string, role: UserRole, password?: string, phone?: string, jobTitle?: string) => void;
+  register: (name: string, email: string, role: UserRole, password?: string, phone?: string, jobTitle?: string) => Promise<{ success: boolean, message?: string }>;
+  createUser: (user: Partial<User>) => void; // Manual create
+  resetPassword: (email: string) => Promise<void>;
   updateUserRole: (userId: string, newRole: UserRole) => void;
+  updateUserStatus: (userId: string, newStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | 'BLOCKED') => void;
+  updateUserProfile: (userId: string, updates: Partial<User>) => void; // New profile updater
+  addUserDocument: (userId: string, doc: UserDocument) => void; // New
+  removeUserDocument: (userId: string, docId: string) => void; // New
   approveUser: (userId: string) => void;
   rejectUser: (userId: string) => void;
+  deleteUser: (userId: string) => void;
   impersonateUser: (userId: string) => void;
   createTour: (name: string, artist: string) => void;
   updateTour: (tourId: string, updates: Partial<Tour>) => void;
   
+  // Email System
+  sendTestEmail: (to: string) => void;
+  setEmailSystemStatus: (status: EmailSystemStatus) => void;
+  clearNotification: () => void;
+
+  // Security
+  triggerSecurityScan: (type: 'AUTOMATED' | 'MANUAL') => Promise<void>;
+
   // Tour Dates
   addTourDate: (date: TourDate) => void;
   updateTourDate: (dateId: string, updates: Partial<TourDate>) => void;
@@ -47,22 +78,51 @@ interface AppContextType {
   updateNote: (noteId: string, updates: Partial<Note>) => void;
   deleteNote: (noteId: string) => void;
 
+  // Guest List
+  addGuestRequest: (request: GuestRequest) => void;
+  updateGuestRequestStatus: (id: string, status: 'Pending' | 'Approved' | 'Denied') => void;
+  deleteGuestRequest: (id: string) => void;
+
+  // Finance
+  addFinanceItem: (item: FinanceItem) => void;
+  deleteFinanceItem: (id: string) => void;
+
+  // Templates
+  addAdvanceTemplate: (tpl: AdvanceTemplate) => void;
+  updateAdvanceTemplate: (id: string, tpl: Partial<AdvanceTemplate>) => void;
+  deleteAdvanceTemplate: (id: string) => void;
+
   addMasterSong: (song: Song) => void;
   saveSetlist: (setlist: Setlist) => void;
   setSelectedDateId: (id: string | null) => void;
   getAllSystemStats: () => { totalUsers: number; totalTours: number, pendingUsers: number };
   resetToDefaults: () => void;
+  exportDatabase: () => string; // Returns JSON string
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+// --- UTILS ---
+const hashPassword = async (password: string): Promise<string> => {
+  const msgBuffer = new TextEncoder().encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
 // --- SEED DATA ---
-// NOTE: ambuckner@gmail.com is the hardcoded Master Admin
 const SEED_USERS: User[] = [
-  { id: '1', name: 'AM Buckner', email: 'ambuckner@gmail.com', password: 'master admin', role: UserRole.MASTER_ADMIN, assignedTourIds: [], phone: '555-0000', jobTitle: 'System Owner', status: 'APPROVED' },
-  { id: '2', name: 'Support Staff', email: 'support@maestro.com', password: 'password123', role: UserRole.SUPPORT_STAFF, assignedTourIds: [], phone: '555-0001', jobTitle: 'Customer Success', status: 'APPROVED' },
-  { id: '3', name: 'Kyle James', email: 'manager@band.com', password: 'password123', role: UserRole.TOUR_MANAGER, assignedTourIds: ['t1'], phone: '310-555-0199', jobTitle: 'Tour Director', status: 'APPROVED' },
-  { id: '4', name: 'Roadie Rick', email: 'crew@band.com', password: 'password123', role: UserRole.CREW, assignedTourIds: ['t1'], phone: '310-555-0142', jobTitle: 'Production Assistant', status: 'APPROVED' },
+  // Password for all seed users is 'password123' (hash: ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f)
+  { 
+      id: '1', name: 'AM Buckner', email: 'ambuckner@gmail.com', password: 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', role: UserRole.MASTER_ADMIN, assignedTourIds: [], phone: '555-0000', jobTitle: 'System Owner', status: 'APPROVED',
+      emergencyContactName: 'Management Office', emergencyContactPhone: '555-9999', emergencyContactRelation: 'Business'
+  },
+  { id: '2', name: 'Support Staff', email: 'support@maestro.com', password: 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', role: UserRole.SUPPORT_STAFF, assignedTourIds: [], phone: '555-0001', jobTitle: 'Customer Success', status: 'APPROVED' },
+  { 
+      id: '3', name: 'Kyle James', email: 'manager@band.com', password: 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', role: UserRole.TOUR_MANAGER, assignedTourIds: ['t1'], phone: '310-555-0199', jobTitle: 'Tour Director', status: 'APPROVED',
+      dietaryRestrictions: 'Vegan', shirtSize: 'L', passportNumber: 'US99887766'
+  },
+  { id: '4', name: 'Roadie Rick', email: 'crew@band.com', password: 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', role: UserRole.CREW, assignedTourIds: ['t1'], phone: '310-555-0142', jobTitle: 'Production Assistant', status: 'APPROVED' },
 ];
 
 const SEED_TOURS: Tour[] = [
@@ -73,14 +133,86 @@ const SEED_TOURS: Tour[] = [
       managerId: '3', 
       crewIds: ['4'],
       storageUsed: 2.1 * 1024 * 1024 * 1024, // 2.1 GB used
-      storageLimit: 5 * 1024 * 1024 * 1024 // 5 GB Limit
+      storageLimit: 5 * 1024 * 1024 * 1024, // 5 GB Limit
+      budget: 1500000 // 1.5M Budget
   }
 ];
 
+const SEED_ADVANCE_TEMPLATES: AdvanceTemplate[] = [
+    {
+        id: 't_standard',
+        tourId: 'SYSTEM',
+        name: 'Standard Venue Advance',
+        description: 'Typical advance for 500-2000 cap rooms.',
+        fields: [
+            { id: 'f1', label: 'Load-in Parking', defaultValue: 'Confirm truck/bus parking location and power.', category: 'Production' },
+            { id: 'f2', label: 'Shore Power', defaultValue: 'Need 60A 3-Phase for Audio, 60A for Lights.', category: 'Production' },
+            { id: 'f3', label: 'Dressing Rooms', defaultValue: 'Need 1 large room (Band) + 1 small (Production).', category: 'Hospitality' },
+            { id: 'f4', label: 'Merch Rate', defaultValue: 'Confirm 80/20 soft, 90/10 recorded.', category: 'Merch' },
+            { id: 'f5', label: 'Security Meeting', defaultValue: 'Time: 30 mins before doors.', category: 'Security' },
+        ]
+    },
+    {
+        id: 't_festival',
+        tourId: 'SYSTEM',
+        name: 'Festival Main Stage',
+        description: 'Short changeover, high strictness.',
+        fields: [
+            { id: 'f1', label: 'Rolling Risers', defaultValue: 'Are rolling risers provided? Dimensions?', category: 'Production' },
+            { id: 'f2', label: 'Changeover Time', defaultValue: 'Strict 20 min set change.', category: 'Production' },
+            { id: 'f3', label: 'Catering', defaultValue: 'Confirm artist catering access passes.', category: 'Hospitality' },
+            { id: 'f4', label: 'Guest List', defaultValue: 'Submit list 48h prior. No adds day of show.', category: 'Security' },
+        ]
+    }
+];
+
 const SEED_DATES: TourDate[] = [
-  { id: '1', tourId: 't1', date: '2025-10-15', city: 'Chicago, IL', venue: 'United Center', status: 'Confirmed', capacity: 23500, venuePhone: '312-455-4500' },
-  { id: '2', tourId: 't1', date: '2025-10-17', city: 'Detroit, MI', venue: 'Little Caesars Arena', status: 'Confirmed', capacity: 20000 },
-  { id: '3', tourId: 't1', date: '2025-10-19', city: 'Toronto, ON', venue: 'Scotiabank Arena', status: 'Pending', capacity: 19800 },
+  { 
+      id: '1', 
+      tourId: 't1', 
+      date: '2025-10-15', 
+      city: 'Chicago, IL', 
+      venue: 'United Center', 
+      status: 'Confirmed', 
+      advanceStatus: 'CONFIRMED', // Already done
+      capacity: 23500, 
+      venuePhone: '312-455-4500',
+      venueContactName: 'John Doe',
+      venueContactPhone: '312-555-0199',
+      venueContactEmail: 'j.doe@unitedcenter.com',
+      documents: [],
+      schedule: [
+          { id: 's1', title: 'Load In', startTime: '08:00', type: 'Production' },
+          { id: 's2', title: 'Lunch', startTime: '13:00', endTime: '14:00', type: 'Other' },
+          { id: 's3', title: 'Soundcheck', startTime: '16:00', endTime: '17:30', type: 'Production' },
+          { id: 's4', title: 'Doors', startTime: '19:00', type: 'Show' },
+          { id: 's5', title: 'Show', startTime: '20:00', endTime: '22:30', type: 'Show' },
+      ]
+  },
+  { 
+      id: '2', 
+      tourId: 't1', 
+      date: '2025-10-17', 
+      city: 'Detroit, MI', 
+      venue: 'Little Caesars Arena', 
+      status: 'Confirmed', 
+      advanceStatus: 'IN_PROGRESS', 
+      capacity: 20000, 
+      schedule: [], 
+      documents: [] 
+  },
+  { 
+      id: '3', 
+      tourId: 't1', 
+      date: '2025-10-19', 
+      city: 'Toronto, ON', 
+      venue: 'Scotiabank Arena', 
+      status: 'Pending', 
+      advanceStatus: 'NOT_STARTED',
+      capacity: 19800, 
+      schedule: [], 
+      documents: [] 
+  },
 ];
 
 const SEED_HOTELS: Hotel[] = [
@@ -114,6 +246,13 @@ const SEED_TRAVEL: TravelItem[] = [
   }
 ];
 
+const SEED_GUEST_REQUESTS: GuestRequest[] = [
+    { id: 'g1', tourId: 't1', dateId: '1', name: 'John Doe', affiliation: 'Label Rep', quantity: 2, status: 'Pending' },
+    { id: 'g2', tourId: 't1', dateId: '1', name: 'Sarah Smith', affiliation: 'Radio Contest', quantity: 4, status: 'Approved' },
+    { id: 'g3', tourId: 't1', dateId: '2', name: 'Mike Jones', affiliation: 'Band Family', quantity: 2, status: 'Pending' },
+    { id: 'g4', tourId: 't1', dateId: '2', name: 'Emily Davis', affiliation: 'Press', quantity: 1, status: 'Denied' },
+];
+
 const SEED_NOTES: Note[] = [
     { 
         id: 'n1', 
@@ -135,16 +274,6 @@ const SEED_NOTES: Note[] = [
         attachments: ['rider_v2.pdf'],
         visibility: 'Public'
     },
-    { 
-        id: 'n3', 
-        tourId: 't1', 
-        content: 'CONFIDENTIAL: Performance guarantee payment has been wired. Balance due night of show.', 
-        type: 'General', 
-        authorName: 'Kyle James', 
-        date: new Date(Date.now() - 200000000).toISOString(), 
-        attachments: [],
-        visibility: 'StaffOnly'
-    }
 ];
 
 const SEED_MASTER_SONGS: Song[] = [
@@ -163,17 +292,18 @@ const SEED_SETLISTS: Setlist[] = [
     {
         id: 'sl1',
         tourId: 't1',
-        // Undefined dateId means Master
-        songs: [
-            SEED_MASTER_SONGS[0],
-            SEED_MASTER_SONGS[1],
-            SEED_MASTER_SONGS[2],
-            SEED_MASTER_SONGS[5]
-        ]
+        songs: [SEED_MASTER_SONGS[0], SEED_MASTER_SONGS[1], SEED_MASTER_SONGS[2], SEED_MASTER_SONGS[5]]
     }
 ];
 
-// Helper to load from local storage or fallback to seed
+const SEED_FINANCE: FinanceItem[] = [
+    { id: 'f1', tourId: 't1', type: 'EXPENSE', category: 'Travel', amount: 4500.00, paySource: 'Amex 8812', description: 'Flights: LAX -> ORD', date: '2025-10-14' },
+    { id: 'f2', tourId: 't1', type: 'EXPENSE', category: 'Accommodation', amount: 8200.50, paySource: 'Amex 8812', description: 'Chicago Hotel Block', date: '2025-10-15' },
+    { id: 'f3', tourId: 't1', type: 'INCOME', category: 'Guarantee', amount: 150000.00, paySource: 'Wire Transfer', description: 'United Center 50% Deposit', date: '2025-10-15' },
+    { id: 'f4', tourId: 't1', type: 'EXPENSE', category: 'Production', amount: 2100.00, paySource: 'Wire Transfer', description: 'Backline Rental', date: '2025-10-15' },
+];
+
+// Helper to load from local storage
 const loadState = <T,>(key: string, seed: T): T => {
     try {
         const saved = localStorage.getItem(key);
@@ -186,7 +316,7 @@ const loadState = <T,>(key: string, seed: T): T => {
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Session State (CurrentUser / CurrentTour) - separate so we can persist login across refresh
+  // Session State
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
       const saved = localStorage.getItem('tm_currentUser');
       return saved ? JSON.parse(saved) : null;
@@ -196,7 +326,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return saved ? JSON.parse(saved) : null;
   });
 
-  // Database State (Persisted)
+  // Global Notification System
+  const [notification, setNotification] = useState<Notification | null>(null);
+
+  // Database State
   const [users, setUsers] = useState<User[]>(() => loadState('tm_users', SEED_USERS));
   const [tours, setTours] = useState<Tour[]>(() => loadState('tm_tours', SEED_TOURS));
   const [tourDates, setTourDates] = useState<TourDate[]>(() => loadState('tm_tourDates', SEED_DATES));
@@ -205,11 +338,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [notes, setNotes] = useState<Note[]>(() => loadState('tm_notes', SEED_NOTES));
   const [masterSongs, setMasterSongs] = useState<Song[]>(() => loadState('tm_masterSongs', SEED_MASTER_SONGS));
   const [setlists, setSetlists] = useState<Setlist[]>(() => loadState('tm_setlists', SEED_SETLISTS));
+  const [guestRequests, setGuestRequests] = useState<GuestRequest[]>(() => loadState('tm_guestRequests', SEED_GUEST_REQUESTS));
+  const [financeItems, setFinanceItems] = useState<FinanceItem[]>(() => loadState('tm_financeItems', SEED_FINANCE));
+  const [advanceTemplates, setAdvanceTemplates] = useState<AdvanceTemplate[]>(() => loadState('tm_advanceTemplates', SEED_ADVANCE_TEMPLATES));
   
-  const [selectedDateId, setSelectedDateId] = useState<string | null>(null);
+  // Email System State
+  const [emailLogs, setEmailLogs] = useState<EmailLog[]>(() => loadState('tm_emailLogs', []));
+  const [emailSystemStatus, setEmailSystemStatus] = useState<EmailSystemStatus>('ENABLED');
+  
+  // Auth & Security Logs
+  const [loginLogs, setLoginLogs] = useState<LoginLog[]>(() => loadState('tm_loginLogs', []));
+  const [securityLogs, setSecurityLogs] = useState<SecurityLog[]>(() => loadState('tm_securityLogs', []));
+  const [isScanning, setIsScanning] = useState(false);
 
-  // --- PERSISTENCE EFFECTS ---
-  // Save data to localStorage whenever it changes
+  // Persistent Selected Date
+  const [selectedDateId, setSelectedDateId] = useState<string | null>(() => {
+      return localStorage.getItem('tm_selectedDateId');
+  });
+
+  // --- PERSISTENCE ---
   useEffect(() => { localStorage.setItem('tm_users', JSON.stringify(users)); }, [users]);
   useEffect(() => { localStorage.setItem('tm_tours', JSON.stringify(tours)); }, [tours]);
   useEffect(() => { localStorage.setItem('tm_tourDates', JSON.stringify(tourDates)); }, [tourDates]);
@@ -218,8 +365,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => { localStorage.setItem('tm_notes', JSON.stringify(notes)); }, [notes]);
   useEffect(() => { localStorage.setItem('tm_masterSongs', JSON.stringify(masterSongs)); }, [masterSongs]);
   useEffect(() => { localStorage.setItem('tm_setlists', JSON.stringify(setlists)); }, [setlists]);
+  useEffect(() => { localStorage.setItem('tm_guestRequests', JSON.stringify(guestRequests)); }, [guestRequests]);
+  useEffect(() => { localStorage.setItem('tm_financeItems', JSON.stringify(financeItems)); }, [financeItems]);
+  useEffect(() => { localStorage.setItem('tm_advanceTemplates', JSON.stringify(advanceTemplates)); }, [advanceTemplates]);
+  useEffect(() => { localStorage.setItem('tm_emailLogs', JSON.stringify(emailLogs)); }, [emailLogs]);
+  useEffect(() => { localStorage.setItem('tm_loginLogs', JSON.stringify(loginLogs)); }, [loginLogs]);
+  useEffect(() => { localStorage.setItem('tm_securityLogs', JSON.stringify(securityLogs)); }, [securityLogs]);
   
-  // Persist Session
   useEffect(() => {
       if (currentUser) localStorage.setItem('tm_currentUser', JSON.stringify(currentUser));
       else localStorage.removeItem('tm_currentUser');
@@ -230,65 +382,195 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       else localStorage.removeItem('tm_currentTour');
   }, [currentTour]);
 
+  // Persist Selected Date ID to prevent context loss on refresh
+  useEffect(() => {
+      if (selectedDateId) localStorage.setItem('tm_selectedDateId', selectedDateId);
+      else localStorage.removeItem('tm_selectedDateId');
+  }, [selectedDateId]);
 
-  // Helper for System Logging
+  // --- AUTOMATED SECURITY SCAN (Every 4 Hours) ---
+  useEffect(() => {
+      const intervalMs = 4 * 60 * 60 * 1000; // 4 Hours
+      const intervalId = setInterval(() => {
+          triggerSecurityScan('AUTOMATED');
+      }, intervalMs);
+
+      return () => clearInterval(intervalId);
+  }, []); // Run once on mount to set interval
+
+  const triggerSecurityScan = async (type: 'AUTOMATED' | 'MANUAL') => {
+      setIsScanning(true);
+      
+      // Simulate scan duration
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      const threats: string[] = [];
+      
+      // 1. Check for failed logins
+      const recentFailures = loginLogs.slice(0, 10).filter(l => l.status === 'FAILED');
+      if (recentFailures.length > 5) {
+          threats.push("Excessive failed login attempts detected.");
+      }
+
+      // 2. Check for blocked users
+      const blockedUsers = users.filter(u => u.status === 'BLOCKED');
+      if (blockedUsers.length > 0) {
+          threats.push(`${blockedUsers.length} blocked account(s) present in active registry.`);
+      }
+
+      // 3. Random simulated threat (10% chance)
+      if (Math.random() < 0.1) {
+          threats.push("Unusual traffic pattern from unknown IP address.");
+      }
+
+      const status = threats.length > 0 ? (type === 'MANUAL' ? 'WARNING' : 'CRITICAL') : 'CLEAN';
+      const details = threats.length > 0 
+          ? threats.join(' | ') 
+          : "System integrity verified. No anomalies detected.";
+
+      const log: SecurityLog = {
+          id: Math.random().toString(36).substr(2, 9),
+          timestamp: new Date().toISOString(),
+          scanType: type,
+          status,
+          details,
+          threatsFound: threats.length
+      };
+
+      setSecurityLogs(prev => [log, ...prev]);
+      
+      if (status !== 'CLEAN' && currentUser?.role === UserRole.MASTER_ADMIN) {
+          setNotification({ 
+              type: 'error', 
+              message: `Security Alert: ${status}`, 
+              subtext: `${threats.length} threat(s) detected during scan.` 
+          });
+      } else if (type === 'MANUAL') {
+          setNotification({ type: 'success', message: 'Security Scan Complete', subtext: 'System is healthy.' });
+      }
+
+      setIsScanning(false);
+  };
+
+  // Auto-clear notifications
+  useEffect(() => {
+      if (notification) {
+          const timer = setTimeout(() => setNotification(null), 5000);
+          return () => clearTimeout(timer);
+      }
+  }, [notification]);
+
+  const clearNotification = () => setNotification(null);
+
   const logSystemAction = (content: string, tourId: string) => {
-    if (!currentUser) return;
+    // If no currentUser (e.g. registration), use 'SYSTEM' as author
+    const author = currentUser ? `${currentUser.name} (ID: ${currentUser.id})` : 'SYSTEM';
     const auditNote: Note = {
         id: Math.random().toString(36).substr(2, 9),
         tourId: tourId,
         content: content,
         type: 'General',
-        authorName: `${currentUser.name} (ID: ${currentUser.id})`,
+        authorName: author,
         date: new Date().toISOString(),
         attachments: [],
-        visibility: 'Public' // System logs are generally public or could be made StaffOnly
+        visibility: 'StaffOnly'
     };
     setNotes(prev => [auditNote, ...prev]);
   };
 
-  // --- EMAIL SIMULATION SERVICE ---
+  const recordLoginAttempt = (email: string, status: 'SUCCESS' | 'FAILED' | 'BLOCKED') => {
+      const log: LoginLog = {
+          id: Math.random().toString(36).substr(2, 9),
+          email,
+          status,
+          timestamp: new Date().toISOString(),
+          ip: '127.0.0.1 (Local)', // Simulated environment
+          userAgent: navigator.userAgent
+      };
+      setLoginLogs(prev => [log, ...prev]);
+  };
+
+  // --- EMAIL SERVICE ---
   const sendSystemEmail = (to: string, subject: string, body: string) => {
-      console.log(`%c[EMAIL SYSTEM] Sending to ${to}`, "color: #8b5cf6; font-weight: bold; font-size: 12px;");
-      console.log(`SUBJECT: ${subject}`);
-      console.log(`BODY: ${body}`);
+      if (emailSystemStatus === 'BLOCKED') {
+          console.log(`[EMAIL BLOCKED] System disabled. Destination: ${to}`);
+          setNotification({ type: 'error', message: 'Email Blocked (SMTP Disabled)' });
+          return false;
+      }
+      
+      const newLog: EmailLog = {
+          id: Math.random().toString(36).substr(2, 9),
+          to,
+          subject: emailSystemStatus === 'SIMULATION' ? `[SIM] ${subject}` : subject,
+          body,
+          timestamp: new Date().toISOString(),
+          status: emailSystemStatus === 'SIMULATION' ? 'QUEUED' : 'SENT'
+      };
+      
+      setEmailLogs(prev => [newLog, ...prev]);
+      
+      // Trigger UI Toast
+      setNotification({
+          type: emailSystemStatus === 'SIMULATION' ? 'info' : 'success',
+          message: emailSystemStatus === 'SIMULATION' ? `Simulated Email to ${to}` : `Email Sent to ${to}`,
+          subtext: "View in Inbox"
+      });
+      
+      console.log(`[EMAIL ${emailSystemStatus}] To: ${to} | Subject: ${subject}`);
       return true;
   };
 
-  const login = (email: string, password?: string) => {
-    // Standardize input
+  const sendTestEmail = (to: string) => {
+      sendSystemEmail(
+          to, 
+          "Test Notification: SMTP Verification", 
+          "This is a test email sent from the Back Office to verify the automated email infrastructure is active and routing correctly."
+      );
+  };
+
+  const login = async (email: string, password?: string) => {
     const cleanEmail = email.toLowerCase().trim();
     const cleanPassword = password || '';
 
     if (!cleanPassword) {
+        recordLoginAttempt(cleanEmail, 'FAILED');
         return { success: false, message: 'Password is required.' };
     }
 
     const user = users.find(u => u.email.toLowerCase() === cleanEmail);
-    
     if (!user) {
+        recordLoginAttempt(cleanEmail, 'FAILED');
         return { success: false, message: 'Account not found.' };
     }
 
-    // STRICT PASSWORD CHECK
-    if (user.password !== cleanPassword) {
-        return { success: false, message: 'Invalid credentials. Please try again.' };
+    if (user.status === 'BLOCKED') {
+        recordLoginAttempt(cleanEmail, 'BLOCKED');
+        return { success: false, message: 'Your account has been blocked by the administrator.' };
+    }
+
+    const hashedInput = await hashPassword(cleanPassword);
+    
+    if (user.password !== hashedInput) {
+        if (user.password !== cleanPassword) {
+            recordLoginAttempt(cleanEmail, 'FAILED');
+            return { success: false, message: 'Invalid credentials. Please try again.' };
+        }
     }
 
     if (user.status === 'PENDING') {
-        return { success: false, message: 'Account pending approval by Master Admin. Please wait for your welcome email.' };
+        recordLoginAttempt(cleanEmail, 'FAILED');
+        return { success: false, message: 'Account pending approval by Master Admin.' };
     }
     
     if (user.status === 'REJECTED') {
+        recordLoginAttempt(cleanEmail, 'BLOCKED');
         return { success: false, message: 'Account application has been declined.' };
     }
     
+    recordLoginAttempt(cleanEmail, 'SUCCESS');
     setCurrentUser(user);
-    
-    // Do NOT auto-select tour. Let Overview handle it.
     setCurrentTour(null);
     setSelectedDateId(null);
-
     return { success: true };
   };
 
@@ -298,60 +580,199 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSelectedDateId(null);
     localStorage.removeItem('tm_currentUser');
     localStorage.removeItem('tm_currentTour');
+    localStorage.removeItem('tm_selectedDateId');
+    localStorage.removeItem('tm_currentView'); // Also clear view on logout
   };
 
-  const register = (name: string, email: string, role: UserRole, password?: string, phone?: string, jobTitle?: string) => {
-    if (users.find(u => u.email === email)) {
-        alert("Email already registered");
-        return;
+  const register = async (name: string, email: string, role: UserRole, password?: string, phone?: string, jobTitle?: string) => {
+    if (users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
+        return { success: false, message: "Email already registered. Please login or use a different email." };
     }
 
+    const hashedPassword = await hashPassword(password || 'password123');
     const newUser: User = {
       id: Math.random().toString(36).substr(2, 9),
-      name,
-      email,
-      role,
-      password: password || 'password123',
-      assignedTourIds: [],
-      phone: phone || '',
-      jobTitle: jobTitle || '',
+      name, email, role, password: hashedPassword,
+      assignedTourIds: [], phone: phone || '', jobTitle: jobTitle || '',
       status: 'PENDING'
     };
     
     setUsers(prev => [...prev, newUser]);
     
+    // Log for Audit
+    logSystemAction(`New User Registration: ${name} (${email}) - Pending Approval`, 'SYSTEM');
+    
+    // Explicitly send email here so it shows up in logs immediately
     sendSystemEmail(
         email, 
-        "Confirmation: Registration Received - Tour Maestro Pro", 
-        `Dear ${name},\n\nWe have received your request to join Tour Maestro Pro. Your account is currently pending review by our Master Administration team.\n\nYou will receive a subsequent email with your login credentials and tour assignment once your profile has been approved.\n\nThank you,\nTour Maestro Pro Team\nhttp://tourmaestro.com`
+        "Registration Received", 
+        `Dear ${name}, your request is pending Master Admin approval.`
     );
+    
+    // Also notify master admin (simulated)
+    sendSystemEmail(
+        "ambuckner@gmail.com",
+        "New User Registration",
+        `New user ${name} (${email}) has registered and is pending approval.`
+    );
+
+    return { success: true };
+  };
+
+  const createUser = async (userData: Partial<User>) => {
+      // Manual creation by admin
+      if (!userData.email || !userData.name) return;
+      if (users.find(u => u.email.toLowerCase() === userData.email?.toLowerCase())) return;
+
+      const defaultPass = await hashPassword(userData.password || 'password123');
+      
+      const newUser: User = {
+          id: Math.random().toString(36).substr(2, 9),
+          name: userData.name,
+          email: userData.email,
+          role: userData.role || UserRole.CREW,
+          password: defaultPass,
+          assignedTourIds: [],
+          phone: userData.phone || '',
+          jobTitle: userData.jobTitle || '',
+          status: 'APPROVED' // Auto-approve manual adds
+      };
+
+      setUsers(prev => [...prev, newUser]);
+      logSystemAction(`Manual User Creation: ${newUser.name} created by Admin`, 'SYSTEM');
+      
+      sendSystemEmail(
+          newUser.email,
+          "Account Created",
+          `Welcome to Tour Maestro Pro. Your account has been created by the administrator.\n\nLogin: ${newUser.email}\nTemp Password: ${userData.password || 'password123'}`
+      );
+      setNotification({ type: 'success', message: 'User Created Successfully' });
+  };
+
+  const resetPassword = async (email: string) => {
+      const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+      
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      if (user) {
+          sendSystemEmail(
+              user.email, 
+              "Password Reset Request - Tour Maestro Pro", 
+              `Hello ${user.name},\n\nWe received a request to reset your password.\n\nClick here to reset: https://app.tourmaestro.com/reset-password?token=${Math.random().toString(36).substr(2)}\n\nIf you did not request this, please ignore this email.`
+          );
+      } else {
+           sendSystemEmail(
+               email,
+               "Account Recovery Attempt (Unregistered)",
+               "A password reset was requested for this email address, but no matching account was found in the database. No action required."
+           );
+      }
   };
 
   const updateUserRole = (userId: string, newRole: UserRole) => {
     const updatedUsers = users.map(u => u.id === userId ? { ...u, role: newRole } : u);
     setUsers(updatedUsers);
-    if (currentUser?.id === userId) {
-        setCurrentUser({ ...currentUser, role: newRole });
-    }
+    if (currentUser?.id === userId) setCurrentUser({ ...currentUser, role: newRole });
+    setNotification({ type: 'success', message: 'User Role Updated' });
+  };
+
+  const updateUserStatus = (userId: string, newStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | 'BLOCKED') => {
+      const user = users.find(u => u.id === userId);
+      if(!user) return;
+
+      const updatedUsers = users.map(u => u.id === userId ? { ...u, status: newStatus } : u);
+      setUsers(updatedUsers);
+      
+      logSystemAction(`User Status Changed: ${user.name} -> ${newStatus}`, 'SYSTEM');
+      
+      if (newStatus === 'APPROVED' && user.status !== 'APPROVED') {
+           sendSystemEmail(user.email, "Account Approved", "Your account has been approved.");
+      } else if (newStatus === 'BLOCKED') {
+           // Optionally send email or just silently block
+      }
+
+      setNotification({ type: 'success', message: `User status set to ${newStatus}` });
+  };
+
+  const updateUserProfile = (userId: string, updates: Partial<User>) => {
+      const updatedUsers = users.map(u => u.id === userId ? { ...u, ...updates } : u);
+      setUsers(updatedUsers);
+      if (currentUser?.id === userId) {
+          setCurrentUser(prev => prev ? ({ ...prev, ...updates }) : null);
+      }
+      setNotification({ type: 'success', message: 'Profile updated' });
+  };
+
+  const addUserDocument = (userId: string, doc: UserDocument) => {
+      setUsers(prev => prev.map(u => {
+          if (u.id === userId) {
+              return { ...u, documents: [...(u.documents || []), doc] };
+          }
+          return u;
+      }));
+      setNotification({ type: 'success', message: 'Document added' });
+  };
+
+  const removeUserDocument = (userId: string, docId: string) => {
+      setUsers(prev => prev.map(u => {
+          if (u.id === userId) {
+              return { ...u, documents: (u.documents || []).filter(d => d.id !== docId) };
+          }
+          return u;
+      }));
+      setNotification({ type: 'info', message: 'Document removed' });
   };
 
   const approveUser = (userId: string) => {
     const user = users.find(u => u.id === userId);
     if (!user) return;
-
-    const updatedUsers = users.map(u => u.id === userId ? { ...u, status: 'APPROVED' as const } : u);
-    setUsers(updatedUsers);
-
+    
+    // 1. Update status
+    setUsers(users.map(u => u.id === userId ? { ...u, status: 'APPROVED' } : u));
+    logSystemAction(`User Approved: ${user.name} (${user.email})`, 'SYSTEM');
+    
+    // 2. Email the User (Welcome)
     sendSystemEmail(
-        user.email,
-        "Welcome Aboard! Your Tour Maestro Pro Account is Active",
-        `Hi ${user.name},\n\nWe are pleased to inform you that your account has been approved by the Master Admin.\n\nACCESS DETAILS:\n- URL: https://app.tourmaestro.com\n- Username: ${user.email}\n\nYou now have full access to your assigned tours. Please log in to view your itinerary and dashboard.\n\nLet's get the show on the road!\n\nBest Regards,\nThe Tour Maestro Pro Team`
+        user.email, 
+        "Welcome Aboard! Account Active", 
+        `Hi ${user.name},\n\nYour account has been approved by the Master Admin.\n\nYou can now log in at: https://app.tourmaestro.com`
     );
+
+    setNotification({ type: 'success', message: 'User Approved', subtext: `${user.name} is now active.` });
   };
 
   const rejectUser = (userId: string) => {
-    const updatedUsers = users.map(u => u.id === userId ? { ...u, status: 'REJECTED' as const } : u);
-    setUsers(updatedUsers);
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+
+    setUsers(users.map(u => u.id === userId ? { ...u, status: 'REJECTED' } : u));
+    logSystemAction(`User Declined: ${user.name} (${user.email})`, 'SYSTEM');
+    
+    // Email the User (Rejection)
+    sendSystemEmail(
+        user.email,
+        "Account Status Update",
+        `Dear ${user.name},\n\nYour request for access to Tour Maestro Pro has been declined at this time. Please contact support if you believe this is an error.`
+    );
+
+    setNotification({ type: 'error', message: 'User Declined', subtext: 'Rejection email sent.' });
+  };
+
+  const deleteUser = (userId: string) => {
+      // UK GDPR Right to Erasure
+      const user = users.find(u => u.id === userId);
+      if(!user) return;
+
+      logSystemAction(`GDPR Deletion: User ${user.email} (ID: ${userId}) was permanently deleted.`, 'SYSTEM');
+      
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      
+      setTours(prev => prev.map(t => ({
+          ...t,
+          crewIds: t.crewIds.filter(id => id !== userId),
+      })));
+
+      setNotification({ type: 'success', message: 'User Deleted (GDPR)', subtext: 'All data removed.' });
   };
 
   const impersonateUser = (userId: string) => {
@@ -364,209 +785,148 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } else {
               setCurrentTour(null);
           }
-          alert(`You are now logged in as ${user.name}. Logout to return to your account.`);
+          setNotification({ type: 'info', message: `Logged in as ${user.name}` });
       }
   };
 
   const createTour = (name: string, artist: string) => {
     if (!currentUser || currentUser.role === UserRole.CREW) return;
-
     const newId = Math.random().toString(36).substr(2, 9);
-    const newTour: Tour = {
-      id: newId,
-      name,
-      artist,
-      managerId: currentUser.id,
-      crewIds: [],
-      storageUsed: 0,
-      storageLimit: 5 * 1024 * 1024 * 1024 // 5 GB
-    };
-
-    setTours(prevTours => [...prevTours, newTour]);
+    const newTour: Tour = { id: newId, name, artist, managerId: currentUser.id, crewIds: [], storageUsed: 0, storageLimit: 5368709120, budget: 1000000 };
     
-    // Automatically assign the creator to the tour
-    const currentAssigned = currentUser.assignedTourIds || [];
-    const updatedAssignedIds = [...currentAssigned, newTour.id];
-    const updatedUser = { ...currentUser, assignedTourIds: updatedAssignedIds };
-
-    setUsers(prevUsers => prevUsers.map(u => u.id === currentUser.id ? updatedUser : u));
+    // Use functional update to ensure we have latest state
+    setTours(prev => [...prev, newTour]);
+    
+    const updatedUser = { 
+        ...currentUser, 
+        assignedTourIds: [...(currentUser.assignedTourIds || []), newTour.id] 
+    };
+    
+    // Update global users list
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
+    
+    // Update session
     setCurrentUser(updatedUser);
     setCurrentTour(newTour);
-    setSelectedDateId(null);
+    
+    // Explicitly log this action to system notes to ensure visibility in audit
+    logSystemAction(`Tour Created: ${name} by ${currentUser.name}`, newId);
   };
 
   const updateTour = (tourId: string, updates: Partial<Tour>) => {
-      const updatedTours = tours.map(t => t.id === tourId ? { ...t, ...updates } : t);
-      setTours(updatedTours);
-      if (currentTour?.id === tourId) {
-          setCurrentTour({ ...currentTour, ...updates });
-      }
-      logSystemAction(`System Log: Tour Configuration Updated`, tourId);
+      setTours(prev => prev.map(t => t.id === tourId ? { ...t, ...updates } : t));
+      if (currentTour?.id === tourId) setCurrentTour(prev => prev ? ({ ...prev, ...updates }) : null);
   };
 
-  // --- TOUR DATES CRUD ---
   const addTourDate = (date: TourDate) => {
     setTourDates(prev => [...prev, date]);
     setSelectedDateId(date.id); 
-    logSystemAction(`System Log: Added Tour Date - ${date.city}`, date.tourId);
+    logSystemAction(`Added Date - ${date.city}`, date.tourId);
+  };
+  const updateTourDate = (dateId: string, updates: Partial<TourDate>) => setTourDates(prev => prev.map(d => d.id === dateId ? { ...d, ...updates } : d));
+  const deleteTourDate = (dateId: string) => setTourDates(prev => prev.filter(d => d.id !== dateId));
+  const addHotel = (hotel: Hotel) => setHotels(prev => [...prev, hotel]);
+  const updateHotel = (hotelId: string, updates: Partial<Hotel>) => setHotels(prev => prev.map(h => h.id === hotelId ? { ...h, ...updates } : h));
+  const deleteHotel = (hotelId: string) => setHotels(prev => prev.filter(h => h.id !== hotelId));
+  const addTravelItem = (item: TravelItem) => setTravelItems(prev => [...prev, item]);
+  const updateTravelItem = (itemId: string, updates: Partial<TravelItem>) => setTravelItems(prev => prev.map(t => t.id === itemId ? { ...t, ...updates } : t));
+  const deleteTravelItem = (itemId: string) => setTravelItems(prev => prev.filter(t => t.id !== itemId));
+  const addNote = (note: Note) => setNotes(prev => [note, ...prev]);
+  const updateNote = (noteId: string, updates: Partial<Note>) => setNotes(prev => prev.map(n => n.id === noteId ? { ...n, ...updates } : n));
+  const deleteNote = (noteId: string) => setNotes(prev => prev.filter(n => n.id !== noteId));
+  const addMasterSong = (song: Song) => setMasterSongs(prev => [...prev, song]);
+  const saveSetlist = (setlist: Setlist) => {
+      setSetlists(prev => {
+          const exists = prev.findIndex(s => s.tourId === setlist.tourId && s.dateId === setlist.dateId);
+          if (exists >= 0) { const u = [...prev]; u[exists] = setlist; return u; }
+          return [...prev, setlist];
+      });
   };
 
-  const updateTourDate = (dateId: string, updates: Partial<TourDate>) => {
-      setTourDates(prev => prev.map(d => d.id === dateId ? { ...d, ...updates } : d));
+  // --- GUEST LIST CRUD ---
+  const addGuestRequest = (request: GuestRequest) => {
+      setGuestRequests(prev => [...prev, request]);
+      setNotification({ type: 'success', message: 'Guest added to list' });
   };
 
-  const deleteTourDate = (dateId: string) => {
-      setTourDates(prev => prev.filter(d => d.id !== dateId));
-      if (selectedDateId === dateId) setSelectedDateId(null);
+  const updateGuestRequestStatus = (id: string, status: 'Pending' | 'Approved' | 'Denied') => {
+      setGuestRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+  };
+
+  const deleteGuestRequest = (id: string) => {
+      setGuestRequests(prev => prev.filter(r => r.id !== id));
+      setNotification({ type: 'info', message: 'Guest removed' });
+  };
+
+  // --- FINANCE CRUD ---
+  const addFinanceItem = (item: FinanceItem) => {
+      setFinanceItems(prev => [item, ...prev]);
+      setNotification({ type: 'success', message: 'Transaction added' });
+  };
+
+  const deleteFinanceItem = (id: string) => {
+      setFinanceItems(prev => prev.filter(i => i.id !== id));
+      setNotification({ type: 'info', message: 'Transaction removed' });
+  };
+
+  // --- TEMPLATE CRUD ---
+  const addAdvanceTemplate = (tpl: AdvanceTemplate) => {
+      setAdvanceTemplates(prev => [...prev, tpl]);
+      setNotification({ type: 'success', message: 'Template saved' });
+  };
+
+  const updateAdvanceTemplate = (id: string, tpl: Partial<AdvanceTemplate>) => {
+      setAdvanceTemplates(prev => prev.map(t => t.id === id ? { ...t, ...tpl } : t));
+      setNotification({ type: 'success', message: 'Template updated' });
+  };
+
+  const deleteAdvanceTemplate = (id: string) => {
+      setAdvanceTemplates(prev => prev.filter(t => t.id !== id));
+      setNotification({ type: 'info', message: 'Template deleted' });
   };
 
   const selectTour = (tourId: string) => {
-    if (!tourId) {
-        setCurrentTour(null);
-        setSelectedDateId(null);
-        return;
-    }
+    if (!tourId) { setCurrentTour(null); setSelectedDateId(null); return; }
     const tour = tours.find(t => t.id === tourId);
-    if (tour && (currentUser?.role === UserRole.MASTER_ADMIN || currentUser?.role === UserRole.SUPPORT_STAFF || currentUser?.assignedTourIds.includes(tourId))) {
+    if (tour) {
         setCurrentTour(tour);
         const tourSpecificDates = tourDates.filter(d => d.tourId === tourId);
-        if (tourSpecificDates.length > 0) {
-            setSelectedDateId(tourSpecificDates[0].id);
-        } else {
-            setSelectedDateId(null);
-        }
+        setSelectedDateId(tourSpecificDates.length > 0 ? tourSpecificDates[0].id : null);
     }
   };
 
   const addCrewToTour = (email: string) => {
     if (!currentTour || !currentUser) return { success: false, message: 'No active session' };
     const userToAdd = users.find(u => u.email === email);
-    if (!userToAdd) return { success: false, message: 'User email not found.' };
-    if (userToAdd.status !== 'APPROVED') return { success: false, message: 'User account is not yet approved.' };
-    if (currentTour.crewIds.includes(userToAdd.id)) return { success: false, message: 'User already added.' };
-
+    if (!userToAdd) return { success: false, message: 'User not found.' };
     const updatedTour = { ...currentTour, crewIds: [...currentTour.crewIds, userToAdd.id] };
     setTours(tours.map(t => t.id === currentTour.id ? updatedTour : t));
     setCurrentTour(updatedTour);
-    const updatedUser = { ...userToAdd, assignedTourIds: [...userToAdd.assignedTourIds, currentTour.id] };
-    setUsers(users.map(u => u.id === userToAdd.id ? updatedUser : u));
-    logSystemAction(`System Log: Added Staff Member - ${userToAdd.name}`, currentTour.id);
-    return { success: true, message: 'Crew member added successfully.' };
+    return { success: true, message: 'Added.' };
   };
 
-  // --- HOTELS CRUD ---
-  const addHotel = (hotel: Hotel) => {
-      setHotels(prev => [...prev, hotel]);
-      logSystemAction(`System Log: Added Hotel - ${hotel.name}`, hotel.tourId);
-  };
+  const getAllSystemStats = () => ({ totalUsers: users.length, totalTours: tours.length, pendingUsers: users.filter(u => u.status === 'PENDING').length });
+  const resetToDefaults = () => { localStorage.clear(); window.location.reload(); };
 
-  const updateHotel = (hotelId: string, updates: Partial<Hotel>) => {
-      const oldHotel = hotels.find(h => h.id === hotelId);
-      setHotels(prev => prev.map(h => h.id === hotelId ? { ...h, ...updates } : h));
-      
-      // Auto-Log Changes
-      if (oldHotel && currentUser) {
-          const changedKeys = Object.keys(updates).filter(key => {
-              const k = key as keyof Hotel;
-              return updates[k] !== oldHotel[k];
-          });
-          if (changedKeys.length > 0) {
-              logSystemAction(`[Logistics Update] Hotel: ${oldHotel.name}. Updated: ${changedKeys.join(', ')}.`, oldHotel.tourId);
-          }
-      }
-  };
-
-  const deleteHotel = (hotelId: string) => {
-      setHotels(prev => prev.filter(h => h.id !== hotelId));
-  };
-
-  // --- TRAVEL CRUD ---
-  const addTravelItem = (item: TravelItem) => {
-    setTravelItems(prev => [...prev, item]);
-    logSystemAction(`System Log: Added Travel - ${item.carrier} ${item.number}`, item.tourId);
-  };
-
-  const updateTravelItem = (itemId: string, updates: Partial<TravelItem>) => {
-      const oldItem = travelItems.find(t => t.id === itemId);
-      setTravelItems(prev => prev.map(t => t.id === itemId ? { ...t, ...updates } : t));
-
-      // Auto-Log Changes
-      if (oldItem && currentUser) {
-          const changedKeys = Object.keys(updates).filter(key => {
-              const k = key as keyof TravelItem;
-              return updates[k] !== oldItem[k];
-          });
-          if (changedKeys.length > 0) {
-              logSystemAction(`[Logistics Update] Travel: ${oldItem.carrier} ${oldItem.number}. Updated: ${changedKeys.join(', ')}.`, oldItem.tourId);
-          }
-      }
-  };
-
-  const deleteTravelItem = (itemId: string) => {
-      setTravelItems(prev => prev.filter(t => t.id !== itemId));
-  };
-
-  // --- NOTES CRUD ---
-  const addNote = (note: Note) => {
-      setNotes(prev => [note, ...prev]);
-      if (currentTour && note.attachments.length > 0) {
-         const addedSize = note.attachments.length * 5 * 1024 * 1024;
-         const updatedTour = { ...currentTour, storageUsed: currentTour.storageUsed + addedSize };
-         setTours(tours.map(t => t.id === currentTour.id ? updatedTour : t));
-         setCurrentTour(updatedTour);
-      }
-  };
-
-  const updateNote = (noteId: string, updates: Partial<Note>) => {
-      setNotes(prev => prev.map(n => n.id === noteId ? { ...n, ...updates } : n));
-  };
-
-  const deleteNote = (noteId: string) => {
-      setNotes(prev => prev.filter(n => n.id !== noteId));
-  };
-  
-  const addMasterSong = (song: Song) => {
-      setMasterSongs(prev => [...prev, song]);
-      if(currentTour) logSystemAction(`System Log: Added Song to Master Library - ${song.title}`, currentTour.id);
-  };
-
-  const saveSetlist = (setlist: Setlist) => {
-      setSetlists(prev => {
-          const exists = prev.findIndex(s => s.tourId === setlist.tourId && s.dateId === setlist.dateId);
-          if (exists >= 0) {
-              const updated = [...prev];
-              updated[exists] = setlist;
-              return updated;
-          }
-          return [...prev, setlist];
-      });
-      logSystemAction(`System Log: Updated Setlist for ${setlist.dateId ? 'Show' : 'Master'}`, setlist.tourId);
-  };
-
-  const getAllSystemStats = () => {
-      return { 
-          totalUsers: users.length, 
-          totalTours: tours.length,
-          pendingUsers: users.filter(u => u.status === 'PENDING').length
+  const exportDatabase = () => {
+      const data = {
+          users, tours, tourDates, hotels, travelItems, notes, masterSongs, setlists, guestRequests, emailLogs, loginLogs, financeItems, securityLogs, advanceTemplates
       };
-  };
-
-  const resetToDefaults = () => {
-      if (window.confirm("Are you sure? This will WIPE ALL DATA and return the app to the initial demo state.")) {
-          localStorage.clear();
-          window.location.reload();
-      }
+      return JSON.stringify(data, null, 2);
   };
 
   return (
     <AppContext.Provider value={{ 
-        currentUser, currentTour, users, tours, tourDates, hotels, travelItems, notes, masterSongs, setlists, selectedDateId,
-        login, logout, register, updateUserRole, approveUser, rejectUser, impersonateUser, createTour, updateTour, selectTour, addCrewToTour, 
-        addTourDate, updateTourDate, deleteTourDate,
-        addHotel, updateHotel, deleteHotel,
-        addTravelItem, updateTravelItem, deleteTravelItem,
-        addNote, updateNote, deleteNote,
-        addMasterSong, saveSetlist, setSelectedDateId, getAllSystemStats, resetToDefaults 
+        currentUser, currentTour, users, tours, tourDates, hotels, travelItems, notes, masterSongs, setlists, selectedDateId, emailLogs, loginLogs, financeItems, emailSystemStatus, notification,
+        guestRequests, securityLogs, isScanning, advanceTemplates,
+        login, logout, register, createUser, resetPassword, updateUserRole, updateUserStatus, updateUserProfile, addUserDocument, removeUserDocument, approveUser, rejectUser, deleteUser, impersonateUser, createTour, updateTour, selectTour, addCrewToTour, 
+        addTourDate, updateTourDate, deleteTourDate, addHotel, updateHotel, deleteHotel, addTravelItem, updateTravelItem, deleteTravelItem,
+        addNote, updateNote, deleteNote, addMasterSong, saveSetlist, setSelectedDateId, getAllSystemStats, resetToDefaults, exportDatabase,
+        addGuestRequest, updateGuestRequestStatus, deleteGuestRequest,
+        addFinanceItem, deleteFinanceItem,
+        addAdvanceTemplate, updateAdvanceTemplate, deleteAdvanceTemplate,
+        sendTestEmail, setEmailSystemStatus, clearNotification,
+        triggerSecurityScan
     }}>
       {children}
     </AppContext.Provider>
@@ -575,8 +935,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 export const useApp = () => {
   const context = useContext(AppContext);
-  if (context === undefined) {
-    throw new Error('useApp must be used within an AppProvider');
-  }
+  if (context === undefined) throw new Error('useApp must be used within an AppProvider');
   return context;
 };

@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { useApp } from '../contexts/AppContext';
-import { Tour, View } from '../types';
+import { Tour, View, UserRole } from '../types';
 import { Calendar, Users, HardDrive, ArrowRight, Mic, Plus } from 'lucide-react';
 
 interface TourOverviewProps {
@@ -14,11 +14,11 @@ export const TourOverview: React.FC<TourOverviewProps> = ({ onNavigate }) => {
     const [newArtistName, setNewArtistName] = React.useState('');
     const [isCreating, setIsCreating] = React.useState(false);
 
-    // Filter available tours for this user
+    // Filter available tours for this user with strict safety checks
     const availableTours = tours.filter(t => 
-        currentUser?.role === 'MASTER_ADMIN' || 
-        currentUser?.role === 'SUPPORT_STAFF' ||
-        currentUser?.assignedTourIds.includes(t.id)
+        currentUser?.role === UserRole.MASTER_ADMIN || 
+        currentUser?.role === UserRole.SUPPORT_STAFF ||
+        (currentUser?.assignedTourIds && currentUser.assignedTourIds.includes(t.id))
     );
 
     const handleEnterTour = (tourId: string) => {
@@ -46,7 +46,7 @@ export const TourOverview: React.FC<TourOverviewProps> = ({ onNavigate }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 
                 {/* Create New Card */}
-                {currentUser?.role !== 'CREW' && (
+                {currentUser?.role !== UserRole.CREW && (
                     <div className="bg-maestro-800/50 border-2 border-dashed border-maestro-700 rounded-2xl p-6 flex flex-col justify-center items-center text-center hover:border-maestro-accent transition-colors group min-h-[250px]">
                         {!isCreating ? (
                             <button onClick={() => setIsCreating(true)} className="w-full h-full flex flex-col items-center justify-center">
@@ -86,7 +86,7 @@ export const TourOverview: React.FC<TourOverviewProps> = ({ onNavigate }) => {
                 {availableTours.map(tour => {
                     const crewCount = tour.crewIds.length + 1;
                     const dates = tourDates.filter(d => d.tourId === tour.id);
-                    const usage = Math.round((tour.storageUsed / tour.storageLimit) * 100);
+                    const usage = tour.storageLimit > 0 ? Math.round((tour.storageUsed / tour.storageLimit) * 100) : 0;
                     
                     return (
                         <div key={tour.id} onClick={() => handleEnterTour(tour.id)} className="bg-maestro-800 rounded-2xl border border-maestro-700 p-6 hover:border-maestro-accent hover:shadow-2xl hover:-translate-y-1 transition-all cursor-pointer flex flex-col justify-between min-h-[250px] relative overflow-hidden group">

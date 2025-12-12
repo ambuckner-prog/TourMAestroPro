@@ -1,20 +1,31 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { generateFastSummary } from '../services/geminiService';
-import { Activity, Calendar, Users, DollarSign, ArrowRight, Plus, MapPin, Building, Hash, MessageSquare, Paperclip, FileText, X, Mail, Phone, Lock, Eye, EyeOff, Trash2 } from 'lucide-react';
+import { Activity, Calendar, Users, PoundSterling, ArrowRight, Plus, MapPin, Building, Hash, MessageSquare, Paperclip, FileText, X, Mail, Phone, Lock, Eye, Trash2, Clock, List, Save, TrendingUp, Ticket, CheckSquare } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
-import { TourDate, Note, UserRole } from '../types';
+import { TourDate, Note, UserRole, View } from '../types';
 
-export const Dashboard: React.FC = () => {
-  const { currentTour, currentUser, tourDates, addTourDate, setSelectedDateId, notes, addNote, deleteNote } = useApp();
+interface DashboardProps {
+    onNavigate?: (view: View) => void;
+}
+
+export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
+  const { currentTour, updateTour, currentUser, tourDates, addTourDate, setSelectedDateId, notes, addNote, deleteNote, guestRequests, financeItems } = useApp();
   const [summary, setSummary] = useState<string>("Generating daily briefing...");
   
+  // Dashboard Tabs
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'SCHEDULE' | 'SALES'>('OVERVIEW');
+
   // Quick Add Logistics State
   const [newDate, setNewDate] = useState('');
   const [newCity, setNewCity] = useState('');
   const [newVenue, setNewVenue] = useState('');
   const [newAddress, setNewAddress] = useState('');
   const [newConfirmation, setNewConfirmation] = useState('');
+
+  // Budget Edit State
+  const [isEditingBudget, setIsEditingBudget] = useState(false);
+  const [tempBudget, setTempBudget] = useState(0);
 
   // Notes Form State
   const [noteContent, setNoteContent] = useState('');
@@ -24,8 +35,26 @@ export const Dashboard: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Filter Data for Current Tour
-  const currentTourDates = tourDates.filter(d => d.tourId === currentTour?.id);
+  const currentTourDates = tourDates.filter(d => d.tourId === currentTour?.id).sort((a,b) => a.date.localeCompare(b.date));
   
+  // --- REAL-TIME CALCULATIONS ---
+  
+  // 1. Ticket Sales
+  const totalCapacity = currentTourDates.reduce((acc, d) => acc + (d.capacity || 0), 0);
+  const totalSold = currentTourDates.reduce((acc, d) => acc + (d.ticketsSold || 0), 0);
+  const salesPercent = totalCapacity > 0 ? Math.round((totalSold / totalCapacity) * 100) : 0;
+  const totalGross = currentTourDates.reduce((acc, d) => acc + (d.grossRevenue || 0), 0);
+
+  // 2. Guest List (Aggregate)
+  const tourGuests = guestRequests.filter(req => req.tourId === currentTour?.id);
+  const totalGuestCount = tourGuests.reduce((acc, req) => acc + req.quantity, 0);
+  const approvedGuestCount = tourGuests.filter(req => req.status === 'Approved').reduce((acc, req) => acc + req.quantity, 0);
+
+  // 3. Financials
+  const totalExpenses = financeItems.filter(i => i.tourId === currentTour?.id && i.type === 'EXPENSE').reduce((acc, i) => acc + i.amount, 0);
+  const budget = currentTour?.budget || 0;
+  const budgetUsedPercent = budget > 0 ? Math.round((totalExpenses / budget) * 100) : 0;
+
   // Note Filtering: Crew only sees Public notes
   const currentTourNotes = notes
     .filter(n => n.tourId === currentTour?.id)
@@ -42,7 +71,8 @@ export const Dashboard: React.FC = () => {
 
   useEffect(() => {
     if(currentTour) {
-        const prompt = `Generate a concise, high-energy executive summary for tour manager of '${currentTour.name}'. Status: on track. Keep it under 50 words.`;
+        setTempBudget(currentTour.budget);
+        const prompt = `Generate a concise, high-energy executive summary for tour manager of '${currentTour.name}'. Status: ${salesPercent}% sold out. Keep it under 50 words.`;
         generateFastSummary(prompt).then(setSummary);
     }
   }, [currentTour]);
@@ -59,7 +89,8 @@ export const Dashboard: React.FC = () => {
             address: newAddress,
             confirmationNumber: newConfirmation,
             status: 'Pending',
-            capacity: 0
+            capacity: 0,
+            schedule: []
         };
         addTourDate(newItem);
         setNewDate('');
@@ -69,6 +100,13 @@ export const Dashboard: React.FC = () => {
         setNewConfirmation('');
         alert("Date Added! Check the Schedule tab.");
     }
+  };
+
+  const handleUpdateBudget = () => {
+      if (currentTour) {
+          updateTour(currentTour.id, { budget: tempBudget });
+          setIsEditingBudget(false);
+      }
   };
 
   const handleAddNote = (e: React.FormEvent) => {
@@ -105,6 +143,11 @@ export const Dashboard: React.FC = () => {
       if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const navigateToDaySheet = (dateId: string) => {
+      setSelectedDateId(dateId);
+      if (onNavigate) onNavigate(View.SCHEDULE);
+  };
+
   const formatNoteDate = (isoString: string) => {
       const d = new Date(isoString);
       return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -120,10 +163,10 @@ export const Dashboard: React.FC = () => {
   };
 
   const stats = [
-    { label: "Ticket Sales", value: "94%", icon: Activity, color: "text-green-400" },
-    { label: "Upcoming Shows", value: currentTourDates.length.toString(), icon: Calendar, color: "text-blue-400" },
-    { label: "Guest List", value: "14/50", icon: Users, color: "text-purple-400" },
-    { label: "Budget Used", value: "42%", icon: DollarSign, color: "text-maestro-gold" },
+    { label: "Ticket Sales", value: `${salesPercent}%`, sub: `${totalSold.toLocaleString()} / ${totalCapacity.toLocaleString()}`, icon: Ticket, color: "text-green-400" },
+    { label: "Upcoming Shows", value: currentTourDates.length.toString(), sub: "Active Routing", icon: Calendar, color: "text-blue-400" },
+    { label: "Total Guest List", value: totalGuestCount.toString(), sub: `${approvedGuestCount} Approved`, icon: Users, color: "text-purple-400" },
+    { label: "Budget Used", value: `${budgetUsedPercent}%`, sub: `£${totalExpenses.toLocaleString()} Spent`, icon: PoundSterling, color: "text-maestro-gold" },
   ];
 
   return (
@@ -131,122 +174,264 @@ export const Dashboard: React.FC = () => {
       
       {/* LEFT CONTENT AREA (Stats, Summary, Schedule) */}
       <div className="flex-1 p-6 overflow-y-auto custom-scrollbar flex flex-col space-y-8">
-          <header>
-            <h1 className="text-4xl font-bold text-white mb-2">Dashboard</h1>
-            <p className="text-slate-400 text-lg">Welcome back. Managing <span className="text-white font-bold">{currentTour?.name}</span></p>
+          <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h1 className="text-4xl font-bold text-white mb-2">Dashboard</h1>
+                <p className="text-slate-400 text-lg">Welcome back. Managing <span className="text-white font-bold">{currentTour?.name}</span></p>
+            </div>
+            
+            {/* Dashboard Navigation Tabs */}
+            <div className="flex bg-maestro-800 p-1 rounded-lg border border-maestro-700">
+                <button 
+                    onClick={() => setActiveTab('OVERVIEW')} 
+                    className={`px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'OVERVIEW' ? 'bg-maestro-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                >
+                    <Activity className="w-4 h-4" /> Overview
+                </button>
+                <button 
+                    onClick={() => setActiveTab('SALES')} 
+                    className={`px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'SALES' ? 'bg-maestro-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                >
+                    <TrendingUp className="w-4 h-4" /> Sales
+                </button>
+                <button 
+                    onClick={() => setActiveTab('SCHEDULE')} 
+                    className={`px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'SCHEDULE' ? 'bg-maestro-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                >
+                    <Clock className="w-4 h-4" /> Schedule
+                </button>
+            </div>
           </header>
 
-          {/* AI Summary Card */}
-          <div className="bg-gradient-to-r from-maestro-800 to-maestro-700 p-8 rounded-2xl border border-maestro-700 shadow-xl relative overflow-hidden flex-shrink-0">
-            <div className="absolute top-0 right-0 p-4 opacity-10">
-                <Activity className="w-48 h-48 text-white" />
-            </div>
-            <div className="relative z-10">
-                <div className="flex items-center space-x-2 mb-3">
-                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                <h3 className="text-sm font-semibold text-maestro-gold uppercase tracking-wider">Flash Briefing</h3>
-                </div>
-                <p className="text-xl text-slate-200 leading-relaxed font-light">
-                {summary}
-                </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 flex-shrink-0">
-            {stats.map((stat, idx) => (
-              <div key={idx} className="bg-maestro-800 p-6 rounded-xl border border-maestro-700 hover:border-maestro-accent transition-colors">
-                <div className="flex justify-between items-start mb-4">
-                  <div className={`p-3 rounded-lg bg-opacity-10 bg-white ${stat.color}`}>
-                    <stat.icon className="w-6 h-6" />
-                  </div>
-                  <span className="text-xs font-medium text-slate-500 bg-maestro-900 px-2 py-1 rounded">+2.5%</span>
-                </div>
-                <div className="text-2xl font-bold text-white">{stat.value}</div>
-                <div className="text-sm text-slate-400">{stat.label}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 pb-6">
-              {/* Quick Add Form */}
-              <div className="xl:col-span-1 bg-maestro-800 p-8 rounded-xl border border-maestro-700 h-fit">
-                 <h3 className="font-bold text-white mb-6 flex items-center gap-2 text-lg">
-                    <Plus className="w-5 h-5 text-maestro-accent" /> Quick Add Logistics
-                 </h3>
-                 <form onSubmit={handleQuickAdd} className="space-y-5">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="text-xs text-slate-400 uppercase font-bold">Date</label>
-                            <input type="date" required value={newDate} onChange={e => setNewDate(e.target.value)} className="w-full bg-maestro-900 border border-maestro-700 rounded p-3 text-white text-sm focus:ring-1 focus:ring-maestro-accent outline-none" />
+          {activeTab === 'OVERVIEW' ? (
+              <>
+                {/* AI Summary Card */}
+                <div className="bg-gradient-to-r from-maestro-800 to-maestro-700 p-8 rounded-2xl border border-maestro-700 shadow-xl relative overflow-hidden flex-shrink-0">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <Activity className="w-48 h-48 text-white" />
+                    </div>
+                    <div className="relative z-10">
+                        <div className="flex items-center space-x-2 mb-3">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        <h3 className="text-sm font-semibold text-maestro-gold uppercase tracking-wider">Flash Briefing</h3>
                         </div>
-                        <div>
-                            <label className="text-xs text-slate-400 uppercase font-bold">City</label>
-                            <input type="text" required placeholder="City, State" value={newCity} onChange={e => setNewCity(e.target.value)} className="w-full bg-maestro-900 border border-maestro-700 rounded p-3 text-white text-sm focus:ring-1 focus:ring-maestro-accent outline-none" />
+                        <p className="text-xl text-slate-200 leading-relaxed font-light">
+                        {summary}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Stats Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 flex-shrink-0">
+                    {stats.map((stat, idx) => (
+                    <div key={idx} className="bg-maestro-800 p-6 rounded-xl border border-maestro-700 hover:border-maestro-accent transition-colors">
+                        <div className="flex justify-between items-start mb-4">
+                        <div className={`p-3 rounded-lg bg-opacity-10 bg-white ${stat.color}`}>
+                            <stat.icon className="w-6 h-6" />
                         </div>
+                        </div>
+                        <div className="text-2xl font-bold text-white">{stat.value}</div>
+                        <div className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">{stat.label}</div>
+                        <div className="text-xs text-slate-400">{stat.sub}</div>
                     </div>
-                    <div>
-                        <label className="text-xs text-slate-400 uppercase font-bold">Venue</label>
-                        <input type="text" required placeholder="Venue Name" value={newVenue} onChange={e => setNewVenue(e.target.value)} className="w-full bg-maestro-900 border border-maestro-700 rounded p-3 text-white text-sm focus:ring-1 focus:ring-maestro-accent outline-none" />
-                    </div>
-                    
-                    {/* NEW FIELDS */}
-                    <div>
-                        <label className="text-xs text-slate-400 uppercase font-bold">Address</label>
-                        <input type="text" placeholder="Full Street Address" value={newAddress} onChange={e => setNewAddress(e.target.value)} className="w-full bg-maestro-900 border border-maestro-700 rounded p-3 text-white text-sm focus:ring-1 focus:ring-maestro-accent outline-none" />
-                    </div>
-                    <div>
-                        <label className="text-xs text-slate-400 uppercase font-bold">Confirmation #</label>
-                        <input type="text" placeholder="Booking Ref / HTML Conf" value={newConfirmation} onChange={e => setNewConfirmation(e.target.value)} className="w-full bg-maestro-900 border border-maestro-700 rounded p-3 text-white text-sm focus:ring-1 focus:ring-maestro-accent outline-none" />
-                    </div>
+                    ))}
+                </div>
 
-                    <button type="submit" className="w-full bg-white text-maestro-900 hover:bg-slate-200 font-bold py-3 rounded transition-colors text-sm">Add to Schedule</button>
-                 </form>
-              </div>
-
-              {/* Upcoming Logistics List */}
-              <div className="xl:col-span-2 bg-maestro-800 p-8 rounded-xl border border-maestro-700 h-fit">
-                  <h3 className="font-bold text-white mb-6 text-lg">Upcoming Schedule</h3>
-                  <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                      {currentTourDates.length === 0 ? (
-                          <div className="text-slate-500 text-sm italic py-8 text-center bg-maestro-900/50 rounded-lg">No dates added yet. Use the form to start routing.</div>
-                      ) : (
-                          currentTourDates.slice(0, 8).map(date => (
-                            <div 
-                                key={date.id} 
-                                onClick={() => setSelectedDateId(date.id)}
-                                className="flex items-center justify-between p-4 bg-maestro-900 rounded-lg hover:bg-maestro-700 cursor-pointer border border-transparent hover:border-maestro-accent transition-all group"
-                            >
-                                <div className="flex items-center gap-6">
-                                    <div className="text-center bg-maestro-800 p-3 rounded-lg w-16 group-hover:bg-maestro-600 transition-colors">
-                                        <div className="text-xs text-slate-500 uppercase font-bold">{date.date.split('-')[1]}/{date.date.split('-')[2]}</div>
-                                        <div className="font-bold text-white text-xl">{date.date.split('-')[0].slice(2)}</div>
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 pb-6">
+                    {/* Budget Management */}
+                    <div className="xl:col-span-1 bg-maestro-800 p-8 rounded-xl border border-maestro-700 h-fit">
+                        <h3 className="font-bold text-white mb-6 flex items-center gap-2 text-lg">
+                            <PoundSterling className="w-5 h-5 text-maestro-gold" /> Budget Controller
+                        </h3>
+                        <div className="space-y-4">
+                            <div className="flex justify-between text-sm text-slate-400 mb-2">
+                                <span>Total Budget</span>
+                                {isEditingBudget ? (
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setIsEditingBudget(false)} className="text-red-400 hover:text-white"><X className="w-4 h-4"/></button>
+                                        <button onClick={handleUpdateBudget} className="text-green-400 hover:text-white"><Save className="w-4 h-4"/></button>
                                     </div>
-                                    <div>
-                                        <div className="text-white font-bold text-lg flex items-center gap-2">
-                                            {date.city}
-                                        </div>
-                                        <div className="text-sm text-slate-400 flex items-center gap-2">
-                                            <Building className="w-4 h-4" /> {date.venue}
-                                        </div>
-                                        {date.address && (
-                                            <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
-                                                <MapPin className="w-3 h-3" /> {date.address}
-                                            </div>
-                                        )}
-                                        {date.confirmationNumber && (
-                                            <div className="text-xs text-maestro-gold flex items-center gap-1 mt-1 font-mono">
-                                                <Hash className="w-3 h-3" /> Conf: {date.confirmationNumber}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                                <ArrowRight className="w-5 h-5 text-slate-600 group-hover:text-white transition-colors" />
+                                ) : (
+                                    canEdit && <button onClick={() => setIsEditingBudget(true)} className="text-maestro-accent hover:text-white"><Activity className="w-4 h-4"/></button>
+                                )}
                             </div>
-                          ))
-                      )}
+                            
+                            {isEditingBudget ? (
+                                <input 
+                                    type="number" 
+                                    value={tempBudget} 
+                                    onChange={(e) => setTempBudget(parseFloat(e.target.value))}
+                                    className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white text-2xl font-bold mb-4 outline-none focus:border-maestro-gold"
+                                />
+                            ) : (
+                                <div className="text-3xl font-bold text-white mb-4">£{budget.toLocaleString()}</div>
+                            )}
+
+                            <div className="w-full bg-maestro-900 h-3 rounded-full overflow-hidden border border-maestro-700">
+                                <div className={`h-full ${budgetUsedPercent > 90 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${budgetUsedPercent}%` }}></div>
+                            </div>
+                            <div className="flex justify-between text-xs font-bold uppercase text-slate-500">
+                                <span>Spent: £{totalExpenses.toLocaleString()}</span>
+                                <span>Rem: £{(budget - totalExpenses).toLocaleString()}</span>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-4 italic">
+                                This budget reflects across all financial reporting. Update here to adjust the tour's total cap.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Upcoming Logistics List */}
+                    <div className="xl:col-span-2 bg-maestro-800 p-8 rounded-xl border border-maestro-700 h-fit">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-white text-lg">Upcoming Schedule</h3>
+                            <button onClick={() => setActiveTab('SCHEDULE')} className="text-maestro-accent text-sm font-bold hover:underline">View All</button>
+                        </div>
+                        <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                            {currentTourDates.length === 0 ? (
+                                <div className="text-slate-500 text-sm italic py-8 text-center bg-maestro-900/50 rounded-lg">No dates added yet. Use the Schedule tab to start routing.</div>
+                            ) : (
+                                currentTourDates.slice(0, 5).map(date => (
+                                    <div 
+                                        key={date.id} 
+                                        onClick={() => navigateToDaySheet(date.id)}
+                                        className="flex items-center justify-between p-4 bg-maestro-900 rounded-lg hover:bg-maestro-700 cursor-pointer border border-transparent hover:border-maestro-accent transition-all group"
+                                    >
+                                        <div className="flex items-center gap-6">
+                                            <div className="text-center bg-maestro-800 p-3 rounded-lg w-16 group-hover:bg-maestro-600 transition-colors">
+                                                <div className="text-xs text-slate-500 uppercase font-bold">{date.date.split('-')[1]}/{date.date.split('-')[2]}</div>
+                                                <div className="font-bold text-white text-xl">{date.date.split('-')[0].slice(2)}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-white font-bold text-lg flex items-center gap-2">
+                                                    {date.city}
+                                                </div>
+                                                <div className="text-sm text-slate-400 flex items-center gap-2">
+                                                    <Building className="w-4 h-4" /> {date.venue}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-xs text-slate-500 uppercase font-bold mb-1">Status</div>
+                                            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${date.status === 'Confirmed' ? 'bg-green-900 text-green-400' : 'bg-yellow-900 text-yellow-400'}`}>{date.status}</span>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+              </>
+          ) : activeTab === 'SALES' ? (
+              // SALES TAB
+              <div className="bg-maestro-800 p-8 rounded-xl border border-maestro-700 min-h-[500px] animate-fadeIn">
+                  <div className="flex justify-between items-center mb-6">
+                      <div>
+                          <h3 className="font-bold text-white text-2xl flex items-center gap-2"><TrendingUp className="w-6 h-6 text-green-400" /> Ticket Sales Breakdown</h3>
+                          <p className="text-slate-400 text-sm mt-1">Total Gross Revenue: <span className="text-white font-bold">£{totalGross.toLocaleString()}</span></p>
+                      </div>
+                      <div className="text-right">
+                          <div className="text-3xl font-bold text-white">{salesPercent}%</div>
+                          <div className="text-xs text-slate-500 uppercase font-bold">Tour Sold</div>
+                      </div>
+                  </div>
+
+                  <div className="overflow-hidden rounded-lg border border-maestro-700">
+                      <table className="w-full text-left">
+                          <thead className="bg-maestro-900 text-slate-400 text-xs uppercase">
+                              <tr>
+                                  <th className="p-4 font-bold">Date</th>
+                                  <th className="p-4 font-bold">City / Venue</th>
+                                  <th className="p-4 font-bold text-right">Sold</th>
+                                  <th className="p-4 font-bold text-right">Capacity</th>
+                                  <th className="p-4 font-bold text-right">%</th>
+                                  <th className="p-4 font-bold text-right">Gross</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-maestro-700 bg-maestro-800/50 text-sm text-slate-200">
+                              {currentTourDates.map(date => {
+                                  const sold = date.ticketsSold || 0;
+                                  const cap = date.capacity || 0;
+                                  const pct = cap > 0 ? Math.round((sold/cap)*100) : 0;
+                                  
+                                  return (
+                                      <tr key={date.id} className="hover:bg-maestro-700 transition-colors">
+                                          <td className="p-4 font-mono text-white">{date.date}</td>
+                                          <td className="p-4">
+                                              <div className="font-bold text-white">{date.city}</div>
+                                              <div className="text-xs text-slate-400">{date.venue}</div>
+                                          </td>
+                                          <td className="p-4 text-right font-mono">{sold.toLocaleString()}</td>
+                                          <td className="p-4 text-right font-mono">{cap.toLocaleString()}</td>
+                                          <td className="p-4 text-right">
+                                              <span className={`px-2 py-1 rounded text-xs font-bold ${pct >= 90 ? 'bg-green-900 text-green-400' : pct >= 70 ? 'bg-blue-900 text-blue-400' : 'bg-red-900 text-red-400'}`}>
+                                                  {pct}%
+                                              </span>
+                                          </td>
+                                          <td className="p-4 text-right font-mono text-white">£{(date.grossRevenue || 0).toLocaleString()}</td>
+                                      </tr>
+                                  );
+                              })}
+                          </tbody>
+                      </table>
                   </div>
               </div>
-          </div>
+          ) : (
+              // SCHEDULE TAB
+              <div className="bg-maestro-800 p-8 rounded-xl border border-maestro-700 min-h-[500px] animate-fadeIn">
+                  <div className="flex justify-between items-center mb-6">
+                      <div>
+                          <h3 className="font-bold text-white text-2xl flex items-center gap-2"><List className="w-6 h-6 text-maestro-accent" /> Master Tour Schedule</h3>
+                          <p className="text-slate-400 text-sm mt-1">Select a date to manage the day sheet timeline, set times, and apply templates.</p>
+                      </div>
+                      <div className="flex gap-2">
+                          <button onClick={() => setActiveTab('OVERVIEW')} className="text-slate-400 hover:text-white px-4 py-2 text-sm">Back to Overview</button>
+                      </div>
+                  </div>
+
+                  <div className="overflow-hidden rounded-lg border border-maestro-700">
+                      <table className="w-full text-left">
+                          <thead className="bg-maestro-900 text-slate-400 text-xs uppercase">
+                              <tr>
+                                  <th className="p-4 font-bold">Date</th>
+                                  <th className="p-4 font-bold">City</th>
+                                  <th className="p-4 font-bold">Venue</th>
+                                  <th className="p-4 font-bold">Schedule Items</th>
+                                  <th className="p-4 text-right">Action</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-maestro-700 bg-maestro-800/50 text-sm text-slate-200">
+                              {currentTourDates.map(date => {
+                                  const itemCount = date.schedule ? date.schedule.length : 0;
+                                  return (
+                                      <tr key={date.id} onClick={() => navigateToDaySheet(date.id)} className="hover:bg-maestro-700 cursor-pointer transition-colors group">
+                                          <td className="p-4 font-mono text-white">{date.date}</td>
+                                          <td className="p-4 flex items-center gap-2"><MapPin className="w-4 h-4 text-slate-500" /> {date.city}</td>
+                                          <td className="p-4">{date.venue}</td>
+                                          <td className="p-4">
+                                              {itemCount > 0 ? (
+                                                  <span className="bg-maestro-900 px-2 py-1 rounded text-xs border border-maestro-700">{itemCount} items</span>
+                                              ) : (
+                                                  <span className="text-slate-500 text-xs italic">Empty</span>
+                                              )}
+                                          </td>
+                                          <td className="p-4 text-right">
+                                              <button className="bg-maestro-accent hover:bg-violet-600 text-white px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1 ml-auto">
+                                                  <CheckSquare className="w-3 h-3" /> View Day Sheet
+                                              </button>
+                                          </td>
+                                      </tr>
+                                  );
+                              })}
+                              {currentTourDates.length === 0 && (
+                                  <tr>
+                                      <td colSpan={5} className="p-8 text-center text-slate-500">No dates found.</td>
+                                  </tr>
+                              )}
+                          </tbody>
+                      </table>
+                  </div>
+              </div>
+          )}
       </div>
 
       {/* RIGHT COLUMN: NOTES SIDEBAR */}

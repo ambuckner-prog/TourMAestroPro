@@ -18,14 +18,26 @@ import { SuperAdmin } from './components/SuperAdmin';
 import { TeamManager } from './components/TeamManager';
 import { SettingsPage } from './components/Settings';
 import { TourOverview } from './components/TourOverview';
+import { SimulatedInbox } from './components/SimulatedInbox';
+import { AdvancePage } from './components/AdvancePage';
 import { View } from './types';
 
 // The Inner Component uses the Context
 const AppContent: React.FC = () => {
   const { currentUser } = useApp();
-  const [currentView, setCurrentView] = useState<View>(View.LANDING);
+  
+  // Load persistent view state or default to LANDING
+  const [currentView, setCurrentView] = useState<View>(() => {
+      const savedView = localStorage.getItem('tm_currentView');
+      return (savedView as View) || View.LANDING;
+  });
 
-  // Redirect to Overview on login
+  // Persist view changes
+  useEffect(() => {
+      localStorage.setItem('tm_currentView', currentView);
+  }, [currentView]);
+
+  // Redirect to Overview on login (only if stuck on auth screens)
   useEffect(() => {
     if (currentUser && (currentView === View.LOGIN || currentView === View.REGISTER || currentView === View.LANDING)) {
         setCurrentView(View.OVERVIEW); 
@@ -51,18 +63,18 @@ const AppContent: React.FC = () => {
       case View.TEAM_MGMT:
         return <TeamManager />;
       case View.DASHBOARD:
-        return <Dashboard />;
+        return <Dashboard onNavigate={setCurrentView} />;
       case View.EVENTS:
-        return <TourSchedule />;
+        return <TourSchedule onNavigate={setCurrentView} />;
       case View.HOTELS:
       case View.TRAVEL:
         return <Itinerary />;
       case View.SCHEDULE:
         return <DaySheet />;
       case View.TASKS:
-        return <Dashboard />;
+        return <Dashboard onNavigate={setCurrentView} />;
       case View.ADVANCE:
-        return <Dashboard />;
+        return <AdvancePage />;
       case View.GUEST_LIST:
         return <GuestList />;
       case View.SETLIST:
@@ -77,6 +89,8 @@ const AppContent: React.FC = () => {
         return <RoadManager />;
       case View.SETTINGS:
         return <SettingsPage />;
+      case View.INBOX:
+        return <SimulatedInbox />;
       default:
         return <TourOverview onNavigate={setCurrentView} />;
     }
