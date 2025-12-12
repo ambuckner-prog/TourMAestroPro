@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { Shield, Users, Globe, Settings, AlertTriangle, CheckCircle, XCircle, LogIn, Mail, Server, Eye, Search } from 'lucide-react';
+import { Shield, Users, Globe, Settings, AlertTriangle, CheckCircle, XCircle, LogIn, Mail, Server, Eye, Search, Lock } from 'lucide-react';
 import { UserRole } from '../types';
 
 export const SuperAdmin: React.FC = () => {
@@ -12,19 +12,28 @@ export const SuperAdmin: React.FC = () => {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // STRICT ACCESS CONTROL
+  if (currentUser?.email !== 'ambuckner@gmail.com') {
+      return (
+          <div className="h-full flex flex-col items-center justify-center bg-maestro-900 text-center p-8">
+              <div className="bg-red-900/20 p-6 rounded-full mb-6 border-2 border-red-600">
+                  <Lock className="w-16 h-16 text-red-600" />
+              </div>
+              <h1 className="text-3xl font-bold text-white mb-2">Restricted Access</h1>
+              <p className="text-slate-400 max-w-md">
+                  This area is the <strong>Back Office Society System</strong> and is exclusively restricted to the Master Account (AM Buckner).
+              </p>
+          </div>
+      );
+  }
+
   const pendingUsers = users.filter(u => u.status === 'PENDING');
   const filteredUsers = users.filter(u => 
       u.status === 'APPROVED' && 
       (u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const isSuperMaster = currentUser?.email === 'ambuckner@gmail.com';
-
   const handleRoleChange = (userId: string, newRole: string) => {
-    if(!isSuperMaster) {
-        alert("Permission Denied: Only the Primary Master Admin (AM Buckner) can assign high-level system roles.");
-        return;
-    }
     updateUserRole(userId, newRole as UserRole);
     setEditingUserId(null);
   };
@@ -42,13 +51,13 @@ export const SuperAdmin: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 h-full flex flex-col">
+    <div className="space-y-6 h-full flex flex-col p-6 overflow-y-auto">
         <header className="flex justify-between items-center bg-maestro-800 p-6 rounded-xl border border-maestro-700">
             <div>
                 <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-                    <Shield className="text-red-500 w-8 h-8" /> Total Back Office
+                    <Shield className="text-red-500 w-8 h-8" /> Back Office Society System
                 </h1>
-                <p className="text-slate-400">Master Control & Multi-Tenant Administration</p>
+                <p className="text-slate-400">Master Level Control & Role Assignment</p>
             </div>
             <div className="flex gap-4 text-sm text-right">
                  <div className="px-4 py-2 bg-maestro-900 rounded-lg border border-maestro-700">
@@ -69,13 +78,13 @@ export const SuperAdmin: React.FC = () => {
         {/* Navigation Tabs */}
         <div className="flex gap-4 border-b border-maestro-700 pb-1">
             <button onClick={() => setActiveTab('USERS')} className={`px-4 py-2 font-bold text-sm flex items-center gap-2 ${activeTab === 'USERS' ? 'text-maestro-accent border-b-2 border-maestro-accent' : 'text-slate-500 hover:text-white'}`}>
-                <Users className="w-4 h-4" /> User Management
+                <Users className="w-4 h-4" /> Role Assignment
             </button>
             <button onClick={() => setActiveTab('TOURS')} className={`px-4 py-2 font-bold text-sm flex items-center gap-2 ${activeTab === 'TOURS' ? 'text-maestro-accent border-b-2 border-maestro-accent' : 'text-slate-500 hover:text-white'}`}>
-                <Globe className="w-4 h-4" /> Tour Oversight
+                <Globe className="w-4 h-4" /> Global Oversight
             </button>
             <button onClick={() => setActiveTab('SYSTEM')} className={`px-4 py-2 font-bold text-sm flex items-center gap-2 ${activeTab === 'SYSTEM' ? 'text-maestro-accent border-b-2 border-maestro-accent' : 'text-slate-500 hover:text-white'}`}>
-                <Settings className="w-4 h-4" /> System Configuration
+                <Settings className="w-4 h-4" /> Infrastructure
             </button>
         </div>
 
@@ -83,7 +92,7 @@ export const SuperAdmin: React.FC = () => {
         {activeTab === 'USERS' && (
             <div className="space-y-8 animate-fadeIn">
                 {/* Pending Approvals */}
-                {pendingUsers.length > 0 ? (
+                {pendingUsers.length > 0 && (
                     <div className="bg-maestro-800 rounded-xl border border-yellow-600/50 overflow-hidden shadow-lg shadow-yellow-900/20">
                         <div className="p-4 bg-yellow-900/20 border-b border-yellow-600/30 flex items-center justify-between font-bold text-yellow-400">
                             <div className="flex items-center gap-2"><AlertTriangle className="w-5 h-5" /> Pending Registrations</div>
@@ -117,7 +126,7 @@ export const SuperAdmin: React.FC = () => {
                                                 <XCircle className="w-3 h-3" /> Decline
                                             </button>
                                             <button onClick={() => handleApprove(u.id, u.name)} className="bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1 shadow-lg shadow-green-900/50">
-                                                <CheckCircle className="w-3 h-3" /> Approve & Email
+                                                <CheckCircle className="w-3 h-3" /> Approve
                                             </button>
                                         </td>
                                     </tr>
@@ -125,17 +134,12 @@ export const SuperAdmin: React.FC = () => {
                             </tbody>
                         </table>
                     </div>
-                ) : (
-                    <div className="bg-maestro-800/50 p-4 rounded-lg border border-maestro-700 text-center text-slate-500 text-sm">
-                        <CheckCircle className="w-6 h-6 mx-auto mb-2 text-green-500 opacity-50" />
-                        All registration queues are clear.
-                    </div>
                 )}
 
                 {/* Approved Users List */}
                 <div className="bg-maestro-800 rounded-xl border border-maestro-700 overflow-hidden">
                     <div className="p-4 bg-maestro-900 border-b border-maestro-700 flex items-center justify-between">
-                         <div className="font-bold text-white flex items-center gap-2"><Users className="w-4 h-4" /> Active Account Database</div>
+                         <div className="font-bold text-white flex items-center gap-2"><Users className="w-4 h-4" /> Society Member Database</div>
                          <div className="relative">
                             <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
                             <input 
@@ -152,9 +156,9 @@ export const SuperAdmin: React.FC = () => {
                             <thead className="text-xs text-slate-500 uppercase bg-maestro-900/50">
                                 <tr>
                                     <th className="p-4">User</th>
-                                    <th className="p-4">System Role</th>
+                                    <th className="p-4">Assigned Level</th>
                                     <th className="p-4">Assigned Tours</th>
-                                    <th className="p-4 text-right">Admin Actions</th>
+                                    <th className="p-4 text-right">Master Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-maestro-700 text-slate-300">
@@ -166,7 +170,7 @@ export const SuperAdmin: React.FC = () => {
                                             {u.phone && <div className="text-[10px] text-slate-600">{u.phone}</div>}
                                         </td>
                                         <td className="p-4">
-                                             {editingUserId === u.id && isSuperMaster ? (
+                                             {editingUserId === u.id ? (
                                                 <select 
                                                     autoFocus
                                                     value={u.role}
@@ -213,11 +217,11 @@ export const SuperAdmin: React.FC = () => {
                                                     <LogIn className="w-3 h-3" /> Login As
                                                 </button>
                                             )}
-                                            {isSuperMaster && u.id !== currentUser?.id && (
+                                            {u.id !== currentUser?.id && (
                                                 <button 
                                                     onClick={() => setEditingUserId(u.id)}
                                                     className="p-2 text-slate-500 hover:text-white"
-                                                    title="Edit Role"
+                                                    title="Assign Level"
                                                 >
                                                     <Settings className="w-3 h-3" />
                                                 </button>
@@ -320,12 +324,6 @@ export const SuperAdmin: React.FC = () => {
                                 <input type="text" disabled placeholder="welcome@tourmaestro.com" className="w-full bg-maestro-900 border border-maestro-700 rounded p-3 pl-10 text-slate-500 cursor-not-allowed" />
                             </div>
                         </div>
-                    </div>
-                    
-                    <div className="mt-6 p-4 bg-maestro-900/50 rounded border border-maestro-700 text-xs text-slate-400">
-                        <p className="font-bold text-slate-300 mb-1">Developer Note:</p>
-                        For a live deployment, integrate <strong>EmailJS</strong>, <strong>SendGrid</strong>, or <strong>AWS SES</strong> into the backend `sendSystemEmail` function. 
-                        The current frontend implementation logs email payloads to the console to demonstrate the workflow logic.
                     </div>
                  </div>
              </div>

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { askMaps, parseTravelDetails } from '../services/geminiService';
+import { askSearch, parseTravelDetails } from '../services/geminiService';
 import { useApp } from '../contexts/AppContext';
 import { Hotel, TravelItem, UserRole } from '../types';
 import { MapPin, Plus, Save, Phone, User, Calendar, Hotel as HotelIcon, Loader2, Wand2, Hash, Plane, Train, Bus, Car, ArrowRight, ClipboardCopy, FileText, X, Edit2, Trash2 } from 'lucide-react';
@@ -73,11 +73,12 @@ export const Itinerary: React.FC = () => {
     setIsAutoFilling(true);
     try {
         const prompt = `Task: Find hotel details and extract booking info.
-        Target Hotel: "${hotelForm.name}"
+        Input String: "${hotelForm.name}"
         
-        1. Search for the official address and main phone number for this hotel.
-        2. Identify the General Manager's name if available publicly, otherwise use "Front Desk".
-        3. Analyze the input string "${hotelForm.name}" specifically for a confirmation code (often formatted like #12345, Conf: ABC, or just a sequence of alphanumeric characters that looks like a booking ref).
+        Instructions:
+        1. Search for the official address and main phone number for this hotel using Google Search.
+        2. Find the General Manager's name if available publicly, otherwise use "Front Desk".
+        3. EXTRACT CONFIRMATION NUMBER: Check the "Input String" above for a booking confirmation code (e.g., "#12345", "Conf: ABC", "Ref: 999", or alphanumeric codes like "HK882"). Extract ONLY the code. Do not search the web for this code. If no code is in the Input String, return "N/A".
 
         Return the result strictly in this format:
         Address: [Full Address]
@@ -85,7 +86,7 @@ export const Itinerary: React.FC = () => {
         Contact: [General Manager Name or "Front Desk"]
         Confirmation: [Extracted Code or "N/A"]`;
         
-        const result = await askMaps(prompt);
+        const result = await askSearch(prompt);
         const text = result.text || "";
 
         const addressMatch = text.match(/Address:\s*(.*)/i);
@@ -230,7 +231,7 @@ export const Itinerary: React.FC = () => {
                                             onClick={handleHotelAutoFill}
                                             disabled={isAutoFilling || !hotelForm.name}
                                             className="bg-maestro-700 hover:bg-maestro-600 text-white p-3 rounded flex items-center gap-2 disabled:opacity-50"
-                                            title="Auto-Complete details from Google Maps"
+                                            title="Auto-Complete details from Search"
                                         >
                                             {isAutoFilling ? <Loader2 className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5 text-maestro-gold" />}
                                         </button>

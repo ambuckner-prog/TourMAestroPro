@@ -39,10 +39,15 @@ export const Auth: React.FC<AuthProps> = ({ view, onNavigate }) => {
     }
   };
 
-  // Quick Login Helpers for Demo
+  // Quick Login Helpers for Demo - UPDATED to pass specific passwords for validation
   const quickLogin = (r: UserRole, mail: string) => {
-      // Updated demo password for Master Admin
-      const pwd = r === UserRole.MASTER_ADMIN ? 'master admin' : 'password123';
+      let pwd = 'password123'; // Default
+      if (r === UserRole.MASTER_ADMIN) pwd = 'master admin';
+      
+      // Auto-fill and submit
+      setEmail(mail);
+      setPassword(pwd);
+      
       const result = login(mail, pwd);
       if(!result.success) setError(result.message || 'Quick login failed');
   };
@@ -183,7 +188,7 @@ export const Auth: React.FC<AuthProps> = ({ view, onNavigate }) => {
         {/* DEMO SHORTCUTS */}
         {view === View.LOGIN && (
             <div className="mt-6 pt-6 border-t border-maestro-700">
-                <p className="text-xs text-center text-slate-500 mb-4 uppercase font-bold">Demo Access (Approved Accounts)</p>
+                <p className="text-xs text-center text-slate-500 mb-4 uppercase font-bold">Secure Demo Login (Auto-fills Password)</p>
                 <div className="grid grid-cols-2 gap-3">
                     <button onClick={() => quickLogin(UserRole.MASTER_ADMIN, 'ambuckner@gmail.com')} className="text-xs bg-slate-700 hover:bg-slate-600 text-white p-2 rounded flex items-center justify-center gap-1">
                         <ShieldCheck className="w-3 h-3" /> Master Admin

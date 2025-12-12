@@ -256,14 +256,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const login = (email: string, password?: string) => {
-    const user = users.find(u => u.email === email);
+    // Standardize input
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanPassword = password || '';
+
+    if (!cleanPassword) {
+        return { success: false, message: 'Password is required.' };
+    }
+
+    const user = users.find(u => u.email.toLowerCase() === cleanEmail);
     
     if (!user) {
         return { success: false, message: 'Account not found.' };
     }
 
-    if (password && user.password && user.password !== password) {
-        return { success: false, message: 'Invalid credentials.' };
+    // STRICT PASSWORD CHECK
+    if (user.password !== cleanPassword) {
+        return { success: false, message: 'Invalid credentials. Please try again.' };
     }
 
     if (user.status === 'PENDING') {
@@ -276,17 +285,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     setCurrentUser(user);
     
-    // Auto-select first tour if available AND no tour is currently persisted/selected
-    if (!currentTour && user.assignedTourIds.length > 0) {
-      const tour = tours.find(t => t.id === user.assignedTourIds[0]);
-      if (tour) {
-        setCurrentTour(tour);
-        const tourSpecificDates = tourDates.filter(d => d.tourId === tour.id);
-        if (tourSpecificDates.length > 0) setSelectedDateId(tourSpecificDates[0].id);
-      }
-    } else if (user.assignedTourIds.length === 0) {
-        setCurrentTour(null);
-    }
+    // Do NOT auto-select tour. Let Overview handle it.
+    setCurrentTour(null);
+    setSelectedDateId(null);
 
     return { success: true };
   };
@@ -383,6 +384,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setTours(prevTours => [...prevTours, newTour]);
     
+    // Automatically assign the creator to the tour
     const currentAssigned = currentUser.assignedTourIds || [];
     const updatedAssignedIds = [...currentAssigned, newTour.id];
     const updatedUser = { ...currentUser, assignedTourIds: updatedAssignedIds };

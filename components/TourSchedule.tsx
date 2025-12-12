@@ -15,8 +15,8 @@ export const TourSchedule: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [dateForm, setDateForm] = useState<Partial<TourDate>>({
-        date: '', city: '', venue: '', capacity: 0, status: 'Confirmed', address: '', confirmationNumber: '',
-        venueContactName: '', venueContactPhone: ''
+        date: '', city: '', venue: '', capacity: 0, status: 'Confirmed', 
+        address: '', confirmationNumber: '', venueContactName: '', venueContactPhone: '', venuePhone: ''
     });
 
     const currentTourDates = tourDates.filter(d => d.tourId === currentTour?.id);
@@ -67,7 +67,7 @@ export const TourSchedule: React.FC = () => {
         setEditingId(null);
         setDateForm({
             date: '', city: '', venue: '', capacity: 0, status: 'Confirmed', 
-            address: '', confirmationNumber: '', venueContactName: '', venueContactPhone: '' 
+            address: '', confirmationNumber: '', venueContactName: '', venueContactPhone: '', venuePhone: ''
         });
         setIsModalOpen(true);
     };
@@ -106,7 +106,8 @@ export const TourSchedule: React.FC = () => {
                 address: dateForm.address,
                 confirmationNumber: dateForm.confirmationNumber,
                 venueContactName: dateForm.venueContactName,
-                venueContactPhone: dateForm.venueContactPhone
+                venueContactPhone: dateForm.venueContactPhone,
+                venuePhone: dateForm.venuePhone
             });
         }
         setIsModalOpen(false);
@@ -185,20 +186,36 @@ export const TourSchedule: React.FC = () => {
                                     className="w-full mt-1 bg-maestro-900 border border-maestro-700 rounded p-3 text-white outline-none focus:border-maestro-accent"
                                 />
                             </div>
+                            
+                            {/* Main Venue Phone (New) */}
                             <div className="lg:col-span-3">
+                                <label className="text-xs font-bold text-slate-400 uppercase">Main Venue Phone</label>
+                                <div className="relative mt-1">
+                                    <Building className="absolute left-3 top-3.5 w-4 h-4 text-slate-500" />
+                                    <input 
+                                        type="text" 
+                                        placeholder="Box Office / Main Line"
+                                        value={dateForm.venuePhone || ''}
+                                        onChange={(e) => setDateForm({...dateForm, venuePhone: e.target.value})}
+                                        className="w-full bg-maestro-900 border border-maestro-700 rounded p-3 pl-10 text-white outline-none focus:border-maestro-accent"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="lg:col-span-6">
                                 <label className="text-xs font-bold text-slate-400 uppercase">Address</label>
                                 <input 
                                     type="text" 
-                                    placeholder="123 Arena Blvd"
+                                    placeholder="123 Arena Blvd, City, State, Zip"
                                     value={dateForm.address || ''}
                                     onChange={(e) => setDateForm({...dateForm, address: e.target.value})}
                                     className="w-full mt-1 bg-maestro-900 border border-maestro-700 rounded p-3 text-white outline-none focus:border-maestro-accent"
                                 />
                             </div>
                             
-                            {/* Contact Fields */}
+                            {/* Contact Person Fields */}
                             <div className="lg:col-span-3">
-                                 <label className="text-xs font-bold text-slate-400 uppercase">Venue Contact</label>
+                                 <label className="text-xs font-bold text-slate-400 uppercase">Venue Rep Name</label>
                                  <div className="relative mt-1">
                                      <User className="absolute left-3 top-3.5 w-4 h-4 text-slate-500" />
                                      <input 
@@ -211,12 +228,12 @@ export const TourSchedule: React.FC = () => {
                                  </div>
                             </div>
                             <div className="lg:col-span-3">
-                                 <label className="text-xs font-bold text-slate-400 uppercase">Contact Phone</label>
+                                 <label className="text-xs font-bold text-slate-400 uppercase">Rep Direct Line</label>
                                  <div className="relative mt-1">
                                      <Phone className="absolute left-3 top-3.5 w-4 h-4 text-slate-500" />
                                      <input 
                                          type="text" 
-                                         placeholder="+1..."
+                                         placeholder="Direct Mobile"
                                          value={dateForm.venueContactPhone || ''}
                                          onChange={(e) => setDateForm({...dateForm, venueContactPhone: e.target.value})}
                                          className="w-full bg-maestro-900 border border-maestro-700 rounded p-3 pl-10 text-white outline-none focus:border-maestro-accent"
@@ -302,9 +319,9 @@ export const TourSchedule: React.FC = () => {
                                                     <User className="w-3 h-3" /> {d.venueContactName}
                                                 </div>
                                             )}
-                                            {d.venueContactPhone && (
+                                            {d.venuePhone && (
                                                 <div className="text-xs text-slate-400 flex items-center gap-1">
-                                                    <Phone className="w-3 h-3" /> {d.venueContactPhone}
+                                                    <Building className="w-3 h-3" /> {d.venuePhone}
                                                 </div>
                                             )}
                                         </div>

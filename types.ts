@@ -6,6 +6,7 @@ export enum View {
   REGISTER = 'REGISTER',
   
   // App Core
+  OVERVIEW = 'OVERVIEW', // New Overview Tab
   DASHBOARD = 'DASHBOARD',
   EVENTS = 'EVENTS',
   HOTELS = 'HOTELS',
@@ -111,6 +112,7 @@ export interface TourDate {
   venueContactName?: string;
   venueContactPhone?: string;
   venuePhone?: string; // Main venue number
+  venueNotes?: string; // Specific instructions/reminders for the venue
 }
 
 export interface GuestRequest {

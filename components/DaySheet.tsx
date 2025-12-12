@@ -11,11 +11,13 @@ export const DaySheet: React.FC = () => {
 
     // Editing States
     const [editSection, setEditSection] = useState<'venue' | 'contacts' | 'accommodation' | null>(null);
+    const [isEditingNotes, setIsEditingNotes] = useState(false);
     
     // Form States
     const [venueForm, setVenueForm] = useState<Partial<TourDate>>({});
     const [contactForm, setContactForm] = useState<Partial<TourDate>>({});
     const [newHotelForm, setNewHotelForm] = useState<Partial<Hotel>>({ name: '', address: '', phone: '' });
+    const [notesBuffer, setNotesBuffer] = useState('');
 
     // Dummy Schedule Data (would come from DB in real app)
     const scheduleItems = [
@@ -96,6 +98,19 @@ export const DaySheet: React.FC = () => {
         }
     };
 
+    // Notes Handlers
+    const handleEditNotes = () => {
+        setNotesBuffer(selectedDate.venueNotes || '');
+        setIsEditingNotes(true);
+    };
+
+    const handleSaveNotes = () => {
+        if (selectedDateId) {
+            updateTourDate(selectedDateId, { venueNotes: notesBuffer });
+            setIsEditingNotes(false);
+        }
+    };
+
     return (
         <div className="flex flex-col h-full bg-maestro-900 text-slate-200">
             {/* Header Area */}
@@ -163,9 +178,39 @@ export const DaySheet: React.FC = () => {
                                 </ul>
                             </div>
                             
-                            <div className="bg-maestro-800/50 p-3 rounded border border-maestro-700">
-                                <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Production Notes</h4>
-                                <p className="text-sm text-slate-300">Pyrotechnics permit pending city approval.</p>
+                            {/* Editable Venue Notes */}
+                            <div className="bg-maestro-800/50 p-3 rounded border border-maestro-700 group relative transition-colors hover:border-maestro-accent/50">
+                                <div className="flex justify-between items-center mb-2">
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase">Venue / Production Notes</h4>
+                                    {!isEditingNotes && (
+                                        <button onClick={handleEditNotes} className="text-slate-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Edit2 className="w-3 h-3" />
+                                        </button>
+                                    )}
+                                </div>
+                                
+                                {isEditingNotes ? (
+                                    <div className="space-y-2 animate-fadeIn">
+                                        <textarea 
+                                            value={notesBuffer} 
+                                            onChange={(e) => setNotesBuffer(e.target.value)}
+                                            className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-sm text-slate-300 outline-none focus:border-maestro-accent h-32 resize-none"
+                                            placeholder="Enter specific production instructions, load-in details, or venue quirks..."
+                                            autoFocus
+                                        />
+                                        <div className="flex justify-end gap-2">
+                                            <button onClick={() => setIsEditingNotes(false)} className="text-xs text-slate-400 hover:text-white px-2">Cancel</button>
+                                            <button onClick={handleSaveNotes} className="text-xs bg-maestro-accent text-white px-3 py-1 rounded font-bold hover:bg-violet-600 transition-colors">Save Note</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div 
+                                        onClick={handleEditNotes}
+                                        className="text-sm text-slate-300 whitespace-pre-wrap min-h-[40px] cursor-pointer"
+                                    >
+                                        {selectedDate.venueNotes ? selectedDate.venueNotes : <span className="text-slate-600 italic">No venue notes added. Click to edit.</span>}
+                                    </div>
+                                )}
                             </div>
 
                             <button onClick={generateNotes} className="w-full py-2 text-xs text-maestro-accent border border-dashed border-maestro-700 hover:border-maestro-accent rounded transition-colors">
