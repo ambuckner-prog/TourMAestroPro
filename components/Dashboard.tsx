@@ -402,7 +402,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                             <h3 className="font-bold text-white text-lg">Upcoming Schedule</h3>
                             <button onClick={() => setActiveTab('SCHEDULE')} className="text-maestro-accent text-sm font-bold hover:underline">View All</button>
                         </div>
-                        <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                        {/* CHANGED: Removed max-h-[500px] and overflow-y-auto to allow full page scrolling */}
+                        <div className="space-y-4">
                             {currentTourDates.length === 0 ? (
                                 <div className="text-slate-500 text-sm italic py-8 text-center bg-maestro-900/50 rounded-lg">No dates added yet. Use the Schedule tab to start routing.</div>
                             ) : (

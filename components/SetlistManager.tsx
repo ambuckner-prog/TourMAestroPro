@@ -325,7 +325,11 @@ export const SetlistManager: React.FC = () => {
                         </div>
                     )}
                     {songs.map((song, idx) => (
-                        <div key={song.id} className="bg-maestro-800 p-4 rounded-xl border border-maestro-700 flex items-center gap-4 group hover:border-maestro-accent transition-colors relative">
+                        <div 
+                            key={song.id} 
+                            tabIndex={0}
+                            className="bg-maestro-800 p-4 rounded-xl border border-maestro-700 flex items-center gap-4 group hover:border-maestro-accent transition-colors relative focus:outline-none focus:ring-2 focus:ring-maestro-accent"
+                        >
                             <div className="text-slate-500 font-mono w-6 text-center">{idx + 1}</div>
                             <div className="flex-1">
                                 <h3 className="font-bold text-white">{song.title}</h3>
