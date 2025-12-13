@@ -91,12 +91,13 @@ export const Finance: React.FC = () => {
 
     const expensesOnly = tourItems.filter(i => i.type === 'EXPENSE');
     const categoryBreakdown = expensesOnly.reduce((acc, curr) => {
-        acc[curr.category] = (acc[curr.category] || 0) + curr.amount;
+        acc[curr.category] = (Number(acc[curr.category]) || 0) + Number(curr.amount);
         return acc;
     }, {} as Record<string, number>);
 
     let cumulativePercent = 0;
-    const chartSegments = Object.entries(categoryBreakdown).map(([cat, amount]) => {
+    const chartSegments = Object.entries(categoryBreakdown).map(([cat, amountVal]) => {
+        const amount = Number(amountVal);
         const percent = amount / (totalExpense || 1); // Avoid div by zero
         const startX = Math.cos(2 * Math.PI * cumulativePercent);
         const startY = Math.sin(2 * Math.PI * cumulativePercent);

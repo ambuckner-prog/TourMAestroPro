@@ -315,7 +315,7 @@ export const TourSchedule: React.FC<TourScheduleProps> = ({ onNavigate }) => {
                             </button>
                         </div>
 
-                        <form onSubmit={handleSaveDate} className="flex-1 overflow-y-auto p-6">
+                        <form id="tourDateForm" onSubmit={handleSaveDate} className="flex-1 overflow-y-auto p-6">
                             
                             {/* === GENERAL TAB === */}
                             {activeTab === 'GENERAL' && (
@@ -739,7 +739,7 @@ export const TourSchedule: React.FC<TourScheduleProps> = ({ onNavigate }) => {
                         {/* Footer Actions */}
                         <div className="p-4 border-t border-maestro-700 bg-maestro-900 flex justify-end gap-3 shrink-0">
                             <button type="button" onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white px-4 py-2 text-sm font-bold">Cancel</button>
-                            <button onClick={handleSaveDate} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded font-bold flex items-center gap-2"><Save className="w-4 h-4" /> {editingId ? 'Update' : 'Save'} Date</button>
+                            <button type="submit" form="tourDateForm" className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded font-bold flex items-center gap-2"><Save className="w-4 h-4" /> {editingId ? 'Update' : 'Save'} Date</button>
                         </div>
                     </div>
                 </div>

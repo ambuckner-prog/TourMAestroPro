@@ -61,16 +61,25 @@ export const TeamManager: React.FC = () => {
   const handleUploadDocument = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0] && selectedUser) {
           const file = e.target.files[0];
-          const newDoc: UserDocument = {
-              id: Math.random().toString(36).substr(2, 9),
-              name: file.name,
-              type: newDocType,
-              url: URL.createObjectURL(file), // Mock URL
-              uploadedAt: new Date().toISOString()
+          
+          // Use FileReader to create a persistent Base64 string instead of a temporary blob URL
+          const reader = new FileReader();
+          reader.onloadend = () => {
+              const base64 = reader.result as string;
+              
+              const newDoc: UserDocument = {
+                  id: Math.random().toString(36).substr(2, 9),
+                  name: file.name,
+                  type: newDocType,
+                  url: base64, // Persistent Storage
+                  uploadedAt: new Date().toISOString()
+              };
+              
+              addUserDocument(selectedUser.id, newDoc);
+              // Update local state to show new doc immediately
+              setSelectedUser(prev => prev ? ({ ...prev, documents: [...(prev.documents || []), newDoc] }) : null);
           };
-          addUserDocument(selectedUser.id, newDoc);
-          // Update local state to show new doc immediately
-          setSelectedUser(prev => prev ? ({ ...prev, documents: [...(prev.documents || []), newDoc] }) : null);
+          reader.readAsDataURL(file);
       }
   };
 
@@ -396,7 +405,7 @@ export const TeamManager: React.FC = () => {
                                                 </div>
                                                 <div className="mt-4 pt-4 border-t border-maestro-800 flex justify-between items-center">
                                                     <span className="text-[10px] text-slate-600">{new Date(doc.uploadedAt).toLocaleDateString()}</span>
-                                                    <a href={doc.url} target="_blank" rel="noreferrer" className="text-xs text-maestro-accent hover:text-white font-bold">View</a>
+                                                    <a href={doc.url} download={doc.name} className="text-xs text-maestro-accent hover:text-white font-bold">Download</a>
                                                 </div>
                                             </div>
                                         ))

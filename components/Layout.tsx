@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Map, Calendar, CheckSquare, Send, Users, 
   Music2, PoundSterling, Paperclip, Globe, Video, Mic2, Menu, X, 
   CalendarDays, ChevronDown, PlusCircle, LogOut, ArrowRight, Mic, 
-  Settings, Check, LayoutGrid, ShieldAlert, Bell, Inbox
+  Settings, Check, LayoutGrid, ShieldAlert, Bell, Inbox, Cloud, RefreshCw
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -16,7 +16,7 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, children }) => {
-  const { currentUser, currentTour, tours, logout, selectTour, createTour, notification, clearNotification, emailLogs } = useApp();
+  const { currentUser, currentTour, tours, logout, selectTour, createTour, notification, clearNotification, emailLogs, lastSaveTime, forceSave } = useApp();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isTourDropdownOpen, setIsTourDropdownOpen] = React.useState(false);
   
@@ -61,10 +61,12 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, chi
     }
   };
 
+  // Robust filtering: User is Master/Support OR Manager OR Assigned
   const availableTours = tours.filter(t => 
       currentUser?.role === UserRole.MASTER_ADMIN || 
       currentUser?.role === UserRole.SUPPORT_STAFF ||
-      currentUser?.assignedTourIds.includes(t.id)
+      t.managerId === currentUser?.id ||
+      (currentUser?.assignedTourIds && currentUser.assignedTourIds.includes(t.id))
   );
 
   return (
@@ -246,9 +248,9 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, chi
             )}
         </nav>
 
-        {/* User Profile Footer */}
+        {/* User Profile Footer & Sync Status */}
         <div className="p-4 border-t border-maestro-700 bg-maestro-800">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 mb-3">
                 <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold">
                     {currentUser?.name.charAt(0)}
                 </div>
@@ -260,6 +262,19 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, chi
                     <LogOut className="w-4 h-4" />
                 </button>
             </div>
+            
+            {/* Sync Indicator */}
+            <button 
+                onClick={forceSave}
+                className="w-full flex items-center justify-between text-[10px] bg-maestro-900 p-2 rounded text-slate-400 hover:text-white hover:bg-maestro-700 transition-colors border border-maestro-700"
+                title="Force Cloud Sync"
+            >
+                <div className="flex items-center gap-2">
+                    <Cloud className="w-3 h-3 text-green-500" />
+                    <span>Last Saved: {lastSaveTime ? lastSaveTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}</span>
+                </div>
+                <RefreshCw className="w-3 h-3 opacity-50" />
+            </button>
         </div>
       </aside>
 

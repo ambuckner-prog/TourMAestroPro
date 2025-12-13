@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { useApp } from '../contexts/AppContext';
-import { Tour, View, UserRole } from '../types';
+import { View, UserRole } from '../types';
 import { Calendar, Users, HardDrive, ArrowRight, Mic, Plus } from 'lucide-react';
 
 interface TourOverviewProps {
@@ -14,11 +14,17 @@ export const TourOverview: React.FC<TourOverviewProps> = ({ onNavigate }) => {
     const [newArtistName, setNewArtistName] = React.useState('');
     const [isCreating, setIsCreating] = React.useState(false);
 
-    // Filter available tours for this user with strict safety checks
+    // Filter available tours for this user with robust fallbacks
+    // We check:
+    // 1. Is Master Admin?
+    // 2. Is Support Staff?
+    // 3. Is the user the direct Creator/Manager of the tour? (Critical Fallback)
+    // 4. Is the tour ID in their assigned list?
     const availableTours = tours.filter(t => 
         currentUser?.role === UserRole.MASTER_ADMIN || 
         currentUser?.role === UserRole.SUPPORT_STAFF ||
-        (currentUser?.assignedTourIds && currentUser.assignedTourIds.includes(t.id))
+        t.managerId === currentUser?.id ||
+        (currentUser?.assignedTourIds && Array.isArray(currentUser.assignedTourIds) && currentUser.assignedTourIds.includes(t.id))
     );
 
     const handleEnterTour = (tourId: string) => {
@@ -29,10 +35,9 @@ export const TourOverview: React.FC<TourOverviewProps> = ({ onNavigate }) => {
     const handleCreate = (e: React.FormEvent) => {
         e.preventDefault();
         if(newTourName && newArtistName) {
+            // Logic handled synchronously in AppContext now
             createTour(newTourName, newArtistName);
-            setIsCreating(false);
-            setNewTourName('');
-            setNewArtistName('');
+            onNavigate(View.DASHBOARD);
         }
     };
 
@@ -45,7 +50,7 @@ export const TourOverview: React.FC<TourOverviewProps> = ({ onNavigate }) => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 
-                {/* Create New Card */}
+                {/* Create New Card (Visible to Masters & Managers) */}
                 {currentUser?.role !== UserRole.CREW && (
                     <div className="bg-maestro-800/50 border-2 border-dashed border-maestro-700 rounded-2xl p-6 flex flex-col justify-center items-center text-center hover:border-maestro-accent transition-colors group min-h-[250px]">
                         {!isCreating ? (
@@ -123,6 +128,13 @@ export const TourOverview: React.FC<TourOverviewProps> = ({ onNavigate }) => {
                         </div>
                     );
                 })}
+                
+                {availableTours.length === 0 && (
+                    <div className="col-span-full py-20 text-center text-slate-500">
+                        <p className="text-lg">No tours found.</p>
+                        <p className="text-sm">If you believe this is an error, please contact support.</p>
+                    </div>
+                )}
             </div>
         </div>
     );
