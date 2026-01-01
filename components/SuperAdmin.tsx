@@ -1,29 +1,32 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { Shield, Users, Globe, Settings, AlertTriangle, CheckCircle, XCircle, LogIn, Mail, Server, Eye, Search, Lock, Play, Activity, ToggleLeft, ToggleRight, RefreshCw, ClipboardList, Plus, Trash2, User, FileText, Download, Ban, MessageSquare, UserPlus, ChevronDown, Database, FileJson, Key, Fingerprint, Radar, Scan, Layout } from 'lucide-react';
+import { Shield, Users, Globe, Settings, AlertTriangle, CheckCircle, XCircle, LogIn, Mail, Server, Eye, Search, Lock, Play, Activity, ToggleLeft, ToggleRight, RefreshCw, ClipboardList, Plus, Trash2, User, FileText, Download, Ban, MessageSquare, UserPlus, ChevronDown, Database, FileJson, Key, Fingerprint, Radar, Scan, Layout, KeyRound, AlertCircle, X } from 'lucide-react';
 import { UserRole, Note, User as UserType, EmailSystemStatus } from '../types';
 
 export const SuperAdmin: React.FC = () => {
-  const { users, tours, getAllSystemStats, updateUserRole, updateUserStatus, createUser, currentUser, approveUser, rejectUser, deleteUser, impersonateUser, emailLogs, loginLogs, emailSystemStatus, setEmailSystemStatus, sendTestEmail, notes, addNote, deleteNote, exportDatabase, hotels, tourDates, masterSongs, securityLogs, triggerSecurityScan, isScanning, advanceTemplates } = useApp();
+  const { users, tours, getAllSystemStats, updateUserRole, updateUserStatus, createUser, currentUser, approveUser, rejectUser, deleteUser, impersonateUser, forceUserPasswordReset, emailLogs, loginLogs, emailSystemStatus, setEmailSystemStatus, sendTestEmail, notes, addNote, deleteNote, exportDatabase, hotels, tourDates, masterSongs, securityLogs, triggerSecurityScan, isScanning, advanceTemplates } = useApp();
   const stats = getAllSystemStats();
   
   const [activeTab, setActiveTab] = useState<'USERS' | 'SECURITY' | 'DATABASE' | 'COMMUNICATION' | 'AUDIT'>('USERS');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [testEmailAddress, setTestEmailAddress] = useState('');
   
-  // Security Notes State
-  const [newSecurityNote, setNewSecurityNote] = useState('');
-
   // User Detail Modal State
   const [selectedUser, setSelectedUser] = useState<UserType | null>(null);
-  const [newUserNote, setNewUserNote] = useState('');
   const [userStatusFilter, setUserStatusFilter] = useState<'ALL' | 'APPROVED' | 'PENDING' | 'REJECTED' | 'BLOCKED'>('ALL');
+  const [temporaryResetPassword, setTemporaryResetPassword] = useState<string | null>(null);
 
   // Manual User Creation State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newUserForm, setNewUserForm] = useState({ name: '', email: '', role: UserRole.CREW, jobTitle: '', phone: '', password: 'password123' });
+  const [newUserForm, setNewUserForm] = useState({ 
+    name: '', 
+    email: '', 
+    role: UserRole.TOUR_MANAGER, 
+    jobTitle: '', 
+    phone: '', 
+    password: 'password123' 
+  });
 
   // STRICT ACCESS CONTROL
   if (currentUser?.email !== 'ambuckner@gmail.com') {
@@ -34,7 +37,7 @@ export const SuperAdmin: React.FC = () => {
               </div>
               <h1 className="text-3xl font-bold text-white mb-2">Restricted Access</h1>
               <p className="text-slate-400 max-w-md">
-                  This area is the <strong>Back Office Society System</strong> and is exclusively restricted to the Master Account (AM Buckner).
+                  This area is the <strong>Back Office Society System</strong> and is exclusively restricted to the Master Account.
               </p>
           </div>
       );
@@ -47,114 +50,41 @@ export const SuperAdmin: React.FC = () => {
       const matchesFilter = userStatusFilter === 'ALL' || u.status === userStatusFilter;
       return matchesSearch && matchesFilter;
   });
-  
-  // Filter Global/System notes
-  const systemNotes = notes.filter(n => n.tourId === 'SYSTEM');
-  
-  // Filter User specific notes (when modal is open)
-  // Ensure the tourId matches exactly what we save: USER:{id}
-  const selectedUserNotes = selectedUser ? notes.filter(n => n.tourId === `USER:${selectedUser.id}`) : [];
 
-  // Security Stats
-  const lastScan = securityLogs.length > 0 ? securityLogs[0] : null;
-  const threatCount = securityLogs.filter(s => s.status !== 'CLEAN').length;
-
-  const handleRoleChange = (userId: string, newRole: string) => {
-    updateUserRole(userId, newRole as UserRole);
-    setEditingUserId(null);
-  };
-
-  const handleStatusChange = (userId: string, newStatus: string) => {
-      updateUserStatus(userId, newStatus as any);
-      if (selectedUser && selectedUser.id === userId) {
-          setSelectedUser({ ...selectedUser, status: newStatus as any });
+  const handleForceReset = async (userId: string) => {
+      if (window.confirm("FORCE RESET: This will instantly change this user's password and bypass email recovery. Proceed?")) {
+          const newPwd = await forceUserPasswordReset(userId);
+          setTemporaryResetPassword(newPwd);
       }
   };
 
-  const handleApprove = (userId: string, userName: string) => {
+  const handleApprove = (userId: string) => {
       approveUser(userId);
-      if (selectedUser && selectedUser.id === userId) {
-          setSelectedUser({ ...selectedUser, status: 'APPROVED' });
-      }
+      alert("Account Approved.");
   };
   
   const handleReject = (userId: string, userName: string) => {
       if(window.confirm(`Decline access for ${userName}? They will receive a rejection email.`)) {
         rejectUser(userId);
-        if (selectedUser && selectedUser.id === userId) {
-            setSelectedUser({ ...selectedUser, status: 'REJECTED' });
-        }
       }
   };
 
   const handleImpersonate = (user: any) => {
-      if(window.confirm(`Security Alert: You are about to login as ${user.name}.\n\nYou will see their specific dashboard and tours. To return here, you must logout and re-login as Master Admin.\n\nProceed?`)) {
+      if(window.confirm(`Security Alert: You are about to login as ${user.name}.\n\nYou will see their specific dashboard and tours.\n\nProceed?`)) {
           impersonateUser(user.id);
-      }
-  };
-
-  const handleSendTestEmail = (e: React.FormEvent) => {
-      e.preventDefault();
-      if(testEmailAddress) {
-          sendTestEmail(testEmailAddress);
-          setTestEmailAddress('');
-      }
-  };
-
-  // --- GENERIC SYSTEM NOTE ---
-  const handleAddSecurityNote = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!newSecurityNote.trim()) return;
-      
-      const note: Note = {
-          id: Math.random().toString(36).substr(2, 9),
-          tourId: 'SYSTEM', // Special ID for global notes
-          content: newSecurityNote,
-          type: 'General',
-          authorName: currentUser.name,
-          date: new Date().toISOString(),
-          attachments: [],
-          visibility: 'StaffOnly'
-      };
-      
-      addNote(note);
-      setNewSecurityNote('');
-  };
-
-  // --- USER SPECIFIC NOTE ---
-  const handleAddUserNote = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!newUserNote.trim() || !selectedUser) return;
-
-      const note: Note = {
-          id: Math.random().toString(36).substr(2, 9),
-          tourId: `USER:${selectedUser.id}`, // Linked to User ID
-          content: newUserNote,
-          type: 'General',
-          authorName: currentUser.name,
-          date: new Date().toISOString(),
-          attachments: [],
-          visibility: 'StaffOnly' // Always staff only
-      };
-
-      addNote(note);
-      setNewUserNote('');
-  };
-
-  const handleDeleteUser = (userId: string) => {
-      const confirmStr = `GDPR WARNING: You are about to PERMANENTLY delete this user.\n\nThis action cannot be undone. It removes all login credentials and personal data from the system.\n\nProceed?`;
-      if(window.confirm(confirmStr)) {
-          deleteUser(userId);
-          setSelectedUser(null);
       }
   };
 
   const handleManualCreate = (e: React.FormEvent) => {
       e.preventDefault();
-      if(!newUserForm.email || !newUserForm.name) return;
+      if(!newUserForm.email || !newUserForm.name) {
+          alert("Name and Email are required.");
+          return;
+      }
       createUser(newUserForm);
       setIsCreateModalOpen(false);
-      setNewUserForm({ name: '', email: '', role: UserRole.CREW, jobTitle: '', phone: '', password: 'password123' });
+      setNewUserForm({ name: '', email: '', role: UserRole.TOUR_MANAGER, jobTitle: '', phone: '', password: 'password123' });
+      alert("User account created and auto-approved.");
   };
 
   const handleDownloadDatabase = () => {
@@ -170,13 +100,13 @@ export const SuperAdmin: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 h-full flex flex-col p-6 overflow-y-auto">
-        <header className="flex justify-between items-center bg-maestro-800 p-6 rounded-xl border border-maestro-700">
+    <div className="space-y-6 h-full flex flex-col p-6 overflow-y-auto relative">
+        <header className="flex justify-between items-center bg-maestro-800 p-6 rounded-xl border border-maestro-700 shadow-xl">
             <div>
                 <h1 className="text-3xl font-bold text-white flex items-center gap-3">
                     <Shield className="text-red-500 w-8 h-8" /> Master Dashboard
                 </h1>
-                <p className="text-slate-400">Society System Control & Security Overview</p>
+                <p className="text-slate-400">Back Office Society Control Suite</p>
             </div>
             <div className="flex gap-4 text-sm text-right">
                  <div className="px-4 py-2 bg-maestro-900 rounded-lg border border-maestro-700">
@@ -187,50 +117,99 @@ export const SuperAdmin: React.FC = () => {
                      <span className="block text-xs text-slate-500 uppercase font-bold">Active Tours</span>
                      <span className="text-xl font-bold text-white">{stats.totalTours}</span>
                  </div>
-                 <div className="px-4 py-2 bg-yellow-900/20 rounded-lg border border-yellow-900/50">
-                     <span className="block text-xs text-yellow-500 uppercase font-bold">Pending</span>
-                     <span className="text-xl font-bold text-yellow-400">{stats.pendingUsers}</span>
+                 <div className={`px-4 py-2 rounded-lg border ${stats.pendingUsers > 0 ? 'bg-yellow-900/20 border-yellow-900/50 animate-pulse' : 'bg-maestro-900 border-maestro-700'}`}>
+                     <span className={`block text-xs uppercase font-bold ${stats.pendingUsers > 0 ? 'text-yellow-500' : 'text-slate-500'}`}>Pending</span>
+                     <span className={`text-xl font-bold ${stats.pendingUsers > 0 ? 'text-yellow-400' : 'text-white'}`}>{stats.pendingUsers}</span>
                  </div>
             </div>
         </header>
 
-        {/* Navigation Tabs */}
+        {/* Create Member Modal Overlay */}
+        {isCreateModalOpen && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+                <div className="bg-maestro-800 border border-maestro-accent/50 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-fadeIn">
+                    <div className="p-6 bg-maestro-900 border-b border-maestro-700 flex justify-between items-center">
+                        <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                            <UserPlus className="w-6 h-6 text-maestro-accent" /> Create New Society Member
+                        </h3>
+                        <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-white"><X /></button>
+                    </div>
+                    <form onSubmit={handleManualCreate} className="p-6 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-400 uppercase">Full Name</label>
+                                <input required type="text" value={newUserForm.name} onChange={e => setNewUserForm({...newUserForm, name: e.target.value})} className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white outline-none focus:border-maestro-accent" placeholder="John Doe" />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-400 uppercase">Email Address</label>
+                                <input required type="email" value={newUserForm.email} onChange={e => setNewUserForm({...newUserForm, email: e.target.value})} className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white outline-none focus:border-maestro-accent" placeholder="john@example.com" />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-400 uppercase">System Role</label>
+                                <select value={newUserForm.role} onChange={e => setNewUserForm({...newUserForm, role: e.target.value as any})} className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white outline-none">
+                                    <option value={UserRole.TOUR_MANAGER}>Tour Manager</option>
+                                    <option value={UserRole.CREW}>Crew / Staff</option>
+                                    <option value={UserRole.SUPPORT_STAFF}>Support Staff</option>
+                                </select>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-400 uppercase">Job Title</label>
+                                <input type="text" value={newUserForm.jobTitle} onChange={e => setNewUserForm({...newUserForm, jobTitle: e.target.value})} className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white outline-none" placeholder="Production Lead" />
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-400 uppercase">Temporary Password</label>
+                            <input type="text" value={newUserForm.password} onChange={e => setNewUserForm({...newUserForm, password: e.target.value})} className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white font-mono outline-none" />
+                        </div>
+                        <div className="pt-4 flex gap-3">
+                            <button type="button" onClick={() => setIsCreateModalOpen(false)} className="flex-1 px-4 py-3 text-slate-400 font-bold hover:text-white transition-colors">Cancel</button>
+                            <button type="submit" className="flex-1 bg-maestro-accent hover:bg-violet-600 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-purple-900/40">
+                                Create Account
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        )}
+
         <div className="flex gap-4 border-b border-maestro-700 pb-1 overflow-x-auto">
             <button onClick={() => setActiveTab('USERS')} className={`px-4 py-2 font-bold text-sm flex items-center gap-2 whitespace-nowrap ${activeTab === 'USERS' ? 'text-maestro-accent border-b-2 border-maestro-accent' : 'text-slate-500 hover:text-white'}`}>
                 <Users className="w-4 h-4" /> Role Assignment
             </button>
-            <button onClick={() => setActiveTab('SECURITY')} className={`px-4 py-2 font-bold text-sm flex items-center gap-2 whitespace-nowrap ${activeTab === 'SECURITY' ? 'text-maestro-accent border-b-2 border-maestro-accent' : 'text-slate-500 hover:text-white'}`}>
-                <Key className="w-4 h-4" /> Security Operations
-            </button>
             <button onClick={() => setActiveTab('DATABASE')} className={`px-4 py-2 font-bold text-sm flex items-center gap-2 whitespace-nowrap ${activeTab === 'DATABASE' ? 'text-maestro-accent border-b-2 border-maestro-accent' : 'text-slate-500 hover:text-white'}`}>
                 <Database className="w-4 h-4" /> Database
             </button>
-            <button onClick={() => setActiveTab('COMMUNICATION')} className={`px-4 py-2 font-bold text-sm flex items-center gap-2 whitespace-nowrap ${activeTab === 'COMMUNICATION' ? 'text-maestro-accent border-b-2 border-maestro-accent' : 'text-slate-500 hover:text-white'}`}>
-                <Mail className="w-4 h-4" /> SMTP Gateway
-            </button>
-            <button onClick={() => setActiveTab('AUDIT')} className={`px-4 py-2 font-bold text-sm flex items-center gap-2 whitespace-nowrap ${activeTab === 'AUDIT' ? 'text-maestro-accent border-b-2 border-maestro-accent' : 'text-slate-500 hover:text-white'}`}>
-                <ClipboardList className="w-4 h-4" /> Audit Logs
-            </button>
         </div>
 
-        {/* ... (USERS, SECURITY TAB content same as before) ... */}
         {activeTab === 'USERS' && (
-            // ... (Included in previous response, keeping it brief here to focus on update)
             <div className="space-y-8 animate-fadeIn">
-                {/* Pending Approvals */}
+                {/* Pending Approvals Table */}
                 {pendingUsers.length > 0 && (
                     <div className="bg-maestro-800 rounded-xl border border-yellow-600/50 overflow-hidden shadow-lg shadow-yellow-900/20">
-                        {/* ... table content ... */}
+                        <div className="p-4 bg-yellow-600/10 border-b border-yellow-600/30 flex items-center justify-between">
+                            <h3 className="font-bold text-yellow-500 flex items-center gap-2 uppercase tracking-wider text-xs">
+                                <AlertCircle className="w-4 h-4" /> Priority Approval Queue
+                            </h3>
+                            <span className="bg-yellow-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full">{pendingUsers.length} Pending</span>
+                        </div>
                         <table className="w-full text-left text-sm">
+                            <thead className="bg-maestro-900 text-slate-400 text-xs uppercase">
+                                <tr>
+                                    <th className="p-4">Name</th>
+                                    <th className="p-4">Email</th>
+                                    <th className="p-4 text-right">Actions</th>
+                                </tr>
+                            </thead>
                             <tbody className="divide-y divide-maestro-700 text-slate-300">
                                 {pendingUsers.map(u => (
                                     <tr key={u.id} className="hover:bg-maestro-700/50">
                                         <td className="p-4"><div className="font-bold text-white">{u.name}</div></td>
                                         <td className="p-4"><div>{u.email}</div></td>
-                                        <td className="p-4"><span className="bg-slate-700 text-slate-300 px-2 py-1 rounded text-xs uppercase font-bold">{u.role}</span></td>
                                         <td className="p-4 text-right flex items-center justify-end gap-2">
-                                            <button onClick={() => handleReject(u.id, u.name)} className="bg-red-900/30 hover:bg-red-900/50 text-red-400 px-3 py-1.5 rounded text-xs font-bold">Decline</button>
-                                            <button onClick={() => handleApprove(u.id, u.name)} className="bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded text-xs font-bold">Approve</button>
+                                            <button onClick={() => handleReject(u.id, u.name)} className="bg-red-900/30 hover:bg-red-900/50 text-red-400 px-3 py-1.5 rounded text-xs font-bold transition-colors">Decline</button>
+                                            <button onClick={() => handleApprove(u.id)} className="bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded text-xs font-bold transition-colors shadow-lg shadow-green-900/20">Approve</button>
                                         </td>
                                     </tr>
                                 ))}
@@ -238,182 +217,160 @@ export const SuperAdmin: React.FC = () => {
                         </table>
                     </div>
                 )}
-                {/* Main Users List */}
-                <div className="bg-maestro-800 rounded-xl border border-maestro-700 overflow-hidden">
-                    {/* ... (Previous content) ... */}
+                
+                {/* Main Member Table */}
+                <div className="bg-maestro-800 rounded-xl border border-maestro-700 overflow-hidden shadow-2xl">
                     <div className="p-4 bg-maestro-900 border-b border-maestro-700 flex flex-col md:flex-row items-center justify-between gap-4">
                          <div className="font-bold text-white flex items-center gap-2">
-                             <Users className="w-4 h-4" /> Society Member Database
-                             <button onClick={() => setIsCreateModalOpen(true)} className="ml-4 bg-maestro-700 hover:bg-maestro-600 text-white px-3 py-1 rounded text-xs flex items-center gap-2 border border-maestro-600"><Plus className="w-3 h-3" /> Add Member</button>
+                             <Users className="w-4 h-4 text-maestro-accent" /> Society Member Database
+                             <button onClick={() => setIsCreateModalOpen(true)} className="ml-4 bg-maestro-700 hover:bg-maestro-accent text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-2 border border-maestro-600 transition-all">
+                                <Plus className="w-3 h-3" /> Add Member
+                             </button>
                          </div>
-                         {/* ... Search ... */}
+                         <div className="flex gap-4 items-center">
+                            <select value={userStatusFilter} onChange={e => setUserStatusFilter(e.target.value as any)} className="bg-maestro-800 border border-maestro-700 text-xs text-slate-300 p-2 rounded-lg outline-none">
+                                <option value="ALL">All Status</option>
+                                <option value="APPROVED">Approved</option>
+                                <option value="PENDING">Pending</option>
+                                <option value="BLOCKED">Blocked</option>
+                            </select>
+                            <div className="relative w-full md:w-64">
+                                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+                                <input 
+                                    type="text" 
+                                    placeholder="Search users..." 
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full bg-maestro-800 border border-maestro-700 rounded-full pl-10 pr-4 py-2 text-sm text-white focus:ring-1 focus:ring-maestro-accent outline-none"
+                                />
+                            </div>
+                         </div>
                     </div>
-                    {/* ... Table ... */}
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-sm">
+                            <thead className="bg-maestro-900/50 text-slate-500 text-xs uppercase font-bold tracking-wider">
+                                <tr>
+                                    <th className="p-4">User Details</th>
+                                    <th className="p-4">Status</th>
+                                    <th className="p-4">System Role</th>
+                                    <th className="p-4">Assignments</th>
+                                    <th className="p-4 text-right">Quick Actions</th>
+                                </tr>
+                            </thead>
                             <tbody className="divide-y divide-maestro-700 text-slate-300">
                                 {filteredUsers.map(u => (
-                                    <tr key={u.id} className="hover:bg-maestro-700/50 transition-colors cursor-pointer" onClick={() => setSelectedUser(u)}>
+                                    <tr key={u.id} className="hover:bg-maestro-700/50 transition-colors">
                                         <td className="p-4"><div className="font-bold text-white">{u.name}</div><div className="text-xs text-slate-500">{u.email}</div></td>
-                                        <td className="p-4"><span className="px-2 py-1 rounded text-[10px] uppercase font-bold border bg-slate-700 text-slate-300">{u.status}</span></td>
-                                        <td className="p-4">{u.role}</td>
-                                        <td className="p-4">{u.assignedTourIds.length} Tours</td>
-                                        <td className="p-4 text-right"><Settings className="w-3 h-3 inline" /></td>
+                                        <td className="p-4">
+                                            <span className={`px-2 py-1 rounded text-[10px] uppercase font-bold border ${
+                                                u.status === 'APPROVED' ? 'bg-green-900/20 text-green-400 border-green-900/30' : 
+                                                u.status === 'PENDING' ? 'bg-yellow-900/20 text-yellow-400 border-yellow-900/30' :
+                                                'bg-slate-700 text-slate-300'
+                                            }`}>
+                                                {u.status}
+                                            </span>
+                                        </td>
+                                        <td className="p-4"><span className="text-xs font-mono">{u.role.replace('_', ' ')}</span></td>
+                                        <td className="p-4 text-xs">{u.assignedTourIds.length} Tours</td>
+                                        <td className="p-4 text-right flex justify-end gap-2">
+                                            <button 
+                                                onClick={() => handleForceReset(u.id)}
+                                                className="bg-orange-900/20 hover:bg-orange-900/40 text-orange-400 p-2 rounded-lg transition-colors"
+                                                title="Emergency Password Reset"
+                                            >
+                                                <KeyRound className="w-4 h-4" />
+                                            </button>
+                                            <button 
+                                                onClick={() => handleImpersonate(u)}
+                                                className="bg-maestro-900 hover:bg-maestro-700 text-maestro-accent p-2 rounded-lg transition-colors border border-maestro-700"
+                                                title="Impersonate User"
+                                            >
+                                                <Eye className="w-4 h-4" />
+                                            </button>
+                                            <button 
+                                                onClick={() => { if(window.confirm('PERMANENTLY delete user?')) deleteUser(u.id); }}
+                                                className="bg-red-900/10 hover:bg-red-900/30 text-red-500 p-2 rounded-lg transition-colors"
+                                                title="Delete User"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
                 </div>
+
+                {/* Force Reset UI Display */}
+                {temporaryResetPassword && (
+                    <div className="bg-orange-900/30 border border-orange-500/50 p-6 rounded-xl animate-bounce shadow-2xl">
+                        <div className="flex items-center gap-3 text-orange-400 mb-2">
+                            <AlertCircle className="w-6 h-6" />
+                            <h3 className="font-bold text-lg uppercase tracking-wider">Emergency Reset Applied</h3>
+                        </div>
+                        <p className="text-slate-300 text-sm mb-4">Account password has been synchronized. Provide this one-time credential to the user:</p>
+                        <div className="bg-maestro-900 p-4 rounded-xl border border-orange-500/30 flex items-center justify-between">
+                            <span className="font-mono text-3xl text-white font-bold tracking-[0.2em]">{temporaryResetPassword}</span>
+                            <button onClick={() => setTemporaryResetPassword(null)} className="text-slate-500 hover:text-white bg-maestro-800 px-3 py-1 rounded-lg text-sm transition-colors">Dismiss</button>
+                        </div>
+                    </div>
+                )}
             </div>
         )}
 
-        {/* ... (SECURITY TAB) ... */}
-        {activeTab === 'SECURITY' && (
-             <div className="space-y-6 animate-fadeIn">
-                {/* ... (Content from previous file) ... */}
-                <div className="bg-maestro-800 p-6 rounded-xl border border-maestro-700">
-                    <h3 className="font-bold text-white text-xl mb-2 flex items-center gap-2"><Scan className="w-6 h-6 text-maestro-gold" /> Automated Threat Hunter</h3>
-                    <p className="text-slate-400 text-sm">System integrity verified. Last scan: {lastScan ? new Date(lastScan.timestamp).toLocaleTimeString() : 'Never'}</p>
-                </div>
-             </div>
-        )}
-
-        {/* === DATABASE TAB (UPDATED) === */}
+        {/* DATABASE TAB */}
         {activeTab === 'DATABASE' && (
             <div className="space-y-6 animate-fadeIn">
-                <div className="bg-maestro-800 p-6 rounded-xl border border-maestro-700 flex flex-col md:flex-row justify-between items-center gap-6">
+                <div className="bg-maestro-800 p-6 rounded-xl border border-maestro-700 flex flex-col md:flex-row justify-between items-center gap-6 shadow-xl">
                     <div>
                         <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-2">
-                            <Database className="w-6 h-6 text-maestro-accent" /> Database Management Center
+                            <Database className="w-6 h-6 text-maestro-accent" /> Data Management Center
                         </h3>
                         <p className="text-slate-400 text-sm">
-                            Directly inspect and persist application state. Use the export feature to save a complete snapshot.
+                            Inspect persistent state. Use export for offline backups or system migration.
                         </p>
                     </div>
                     <button 
                         onClick={handleDownloadDatabase}
                         className="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-3 shadow-lg shadow-green-900/20 transform hover:scale-105 transition-all"
                     >
-                        <Download className="w-5 h-5" /> Export Full Database (JSON)
+                        <Download className="w-5 h-5" /> Export DB Snapshot (JSON)
                     </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <div className="bg-maestro-800 p-4 rounded-xl border border-maestro-700">
-                        <div className="flex justify-between items-center mb-4">
-                            <h4 className="font-bold text-white flex items-center gap-2"><Globe className="w-4 h-4 text-slate-400" /> Tours Collection</h4>
-                            <span className="bg-maestro-900 text-xs px-2 py-1 rounded">{tours.length} Records</span>
+                        <div className="flex justify-between items-center mb-4 border-b border-maestro-700 pb-2">
+                            <h4 className="font-bold text-white flex items-center gap-2"><Globe className="w-4 h-4 text-slate-400" /> Tours</h4>
+                            <span className="bg-maestro-900 text-[10px] text-slate-500 px-2 py-0.5 rounded-full uppercase font-bold">{tours.length} Records</span>
                         </div>
-                        <div className="h-32 overflow-y-auto custom-scrollbar bg-maestro-900/50 p-2 rounded text-xs font-mono text-slate-400">
-                            {JSON.stringify(tours, null, 2)}
+                        <div className="h-48 overflow-y-auto custom-scrollbar bg-maestro-900/50 p-3 rounded-lg text-[10px] font-mono text-slate-400 border border-maestro-700">
+                            <pre>{JSON.stringify(tours, null, 2)}</pre>
                         </div>
                     </div>
                     
                     <div className="bg-maestro-800 p-4 rounded-xl border border-maestro-700">
-                        <div className="flex justify-between items-center mb-4">
-                            <h4 className="font-bold text-white flex items-center gap-2"><Users className="w-4 h-4 text-slate-400" /> Users Collection</h4>
-                            <span className="bg-maestro-900 text-xs px-2 py-1 rounded">{users.length} Records</span>
+                        <div className="flex justify-between items-center mb-4 border-b border-maestro-700 pb-2">
+                            <h4 className="font-bold text-white flex items-center gap-2"><Users className="w-4 h-4 text-slate-400" /> User Entities</h4>
+                            <span className="bg-maestro-900 text-[10px] text-slate-500 px-2 py-0.5 rounded-full uppercase font-bold">{users.length} Records</span>
                         </div>
-                        <div className="h-32 overflow-y-auto custom-scrollbar bg-maestro-900/50 p-2 rounded text-xs font-mono text-slate-400">
-                            {JSON.stringify(users.map(u => ({...u, password: '***'})), null, 2)}
-                        </div>
-                    </div>
-
-                    <div className="bg-maestro-800 p-4 rounded-xl border border-maestro-700">
-                        <div className="flex justify-between items-center mb-4">
-                            <h4 className="font-bold text-white flex items-center gap-2"><Layout className="w-4 h-4 text-slate-400" /> Advance Templates</h4>
-                            <span className="bg-maestro-900 text-xs px-2 py-1 rounded">{advanceTemplates.length} Records</span>
-                        </div>
-                        <div className="h-32 overflow-y-auto custom-scrollbar bg-maestro-900/50 p-2 rounded text-xs font-mono text-slate-400">
-                            {JSON.stringify(advanceTemplates, null, 2)}
+                        <div className="h-48 overflow-y-auto custom-scrollbar bg-maestro-900/50 p-3 rounded-lg text-[10px] font-mono text-slate-400 border border-maestro-700">
+                            <pre>{JSON.stringify(users.map(u => ({...u, password: 'HIDDEN'})), null, 2)}</pre>
                         </div>
                     </div>
 
                     <div className="bg-maestro-800 p-4 rounded-xl border border-maestro-700">
-                        <div className="flex justify-between items-center mb-4">
-                            <h4 className="font-bold text-white flex items-center gap-2"><FileText className="w-4 h-4 text-slate-400" /> Notes Collection</h4>
-                            <span className="bg-maestro-900 text-xs px-2 py-1 rounded">{notes.length} Records</span>
+                        <div className="flex justify-between items-center mb-4 border-b border-maestro-700 pb-2">
+                            <h4 className="font-bold text-white flex items-center gap-2"><Layout className="w-4 h-4 text-slate-400" /> Templates</h4>
+                            <span className="bg-maestro-900 text-[10px] text-slate-500 px-2 py-0.5 rounded-full uppercase font-bold">{advanceTemplates.length} Records</span>
                         </div>
-                        <div className="h-32 overflow-y-auto custom-scrollbar bg-maestro-900/50 p-2 rounded text-xs font-mono text-slate-400">
-                            {JSON.stringify(notes, null, 2)}
-                        </div>
-                    </div>
-
-                    <div className="bg-maestro-800 p-4 rounded-xl border border-maestro-700">
-                        <div className="flex justify-between items-center mb-4">
-                            <h4 className="font-bold text-white flex items-center gap-2"><Database className="w-4 h-4 text-slate-400" /> Logistics (Hotels/Dates)</h4>
-                            <span className="bg-maestro-900 text-xs px-2 py-1 rounded">{hotels.length + tourDates.length} Records</span>
-                        </div>
-                        <div className="h-32 overflow-y-auto custom-scrollbar bg-maestro-900/50 p-2 rounded text-xs font-mono text-slate-400">
-                            {JSON.stringify({ hotels, tourDates }, null, 2)}
-                        </div>
-                    </div>
-
-                    <div className="bg-maestro-800 p-4 rounded-xl border border-maestro-700">
-                        <div className="flex justify-between items-center mb-4">
-                            <h4 className="font-bold text-white flex items-center gap-2"><FileJson className="w-4 h-4 text-slate-400" /> Master Songs</h4>
-                            <span className="bg-maestro-900 text-xs px-2 py-1 rounded">{masterSongs.length} Records</span>
-                        </div>
-                        <div className="h-32 overflow-y-auto custom-scrollbar bg-maestro-900/50 p-2 rounded text-xs font-mono text-slate-400">
-                            {JSON.stringify(masterSongs, null, 2)}
+                        <div className="h-48 overflow-y-auto custom-scrollbar bg-maestro-900/50 p-3 rounded-lg text-[10px] font-mono text-slate-400 border border-maestro-700">
+                            <pre>{JSON.stringify(advanceTemplates, null, 2)}</pre>
                         </div>
                     </div>
                 </div>
             </div>
-        )}
-
-        {/* ... (COMMUNICATION, AUDIT, MODALS same as before) ... */}
-        {activeTab === 'COMMUNICATION' && (
-             <div className="animate-fadeIn">
-                 {/* ... content ... */}
-                 <div className="bg-maestro-800 p-6 rounded-xl border border-maestro-700">
-                    <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Server className="w-5 h-5 text-maestro-accent" /> SMTP Gateway</h3>
-                    <p className="text-slate-400 text-sm">Status: {emailSystemStatus}</p>
-                 </div>
-             </div>
-        )}
-        {activeTab === 'AUDIT' && (
-             <div className="animate-fadeIn">
-                 {/* ... content ... */}
-                 <div className="bg-maestro-800 p-6 rounded-xl border border-maestro-700">
-                    <h3 className="font-bold text-white mb-4 flex items-center gap-2"><ClipboardList className="w-5 h-5 text-maestro-gold" /> System Audit Trail</h3>
-                    <div className="text-slate-400 text-sm">
-                        {systemNotes.map(n => <div key={n.id} className="border-b border-maestro-700 py-2">{n.content}</div>)}
-                    </div>
-                 </div>
-             </div>
-        )}
-        
-        {/* Modals remain mostly unchanged */}
-        {selectedUser && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-                <div className="bg-maestro-800 border border-maestro-accent/50 p-0 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-                    <div className="p-6 border-b border-maestro-700 bg-maestro-900 flex justify-between items-center">
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-slate-700 rounded-full flex items-center justify-center text-xl font-bold text-white">{selectedUser.name.charAt(0)}</div>
-                            <div><h2 className="text-xl font-bold text-white">{selectedUser.name}</h2><p className="text-sm text-slate-400">{selectedUser.email}</p></div>
-                        </div>
-                        <button onClick={() => setSelectedUser(null)} className="p-2 hover:bg-white/10 rounded-full text-slate-400 hover:text-white"><XCircle className="w-6 h-6" /></button>
-                    </div>
-                    {/* ... Rest of modal ... */}
-                </div>
-            </div>
-        )}
-        {isCreateModalOpen && (
-             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-                 <div className="bg-maestro-800 border border-maestro-accent/50 p-6 rounded-xl shadow-2xl w-full max-w-md">
-                     <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xl font-bold text-white flex items-center gap-2"><UserPlus className="w-6 h-6 text-maestro-accent" /> Add Member</h3>
-                        <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-white"><XCircle className="w-6 h-6" /></button>
-                     </div>
-                     <form onSubmit={handleManualCreate} className="space-y-4">
-                         <input type="text" placeholder="Name" required value={newUserForm.name} onChange={e => setNewUserForm({...newUserForm, name: e.target.value})} className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white outline-none" />
-                         <input type="email" placeholder="Email" required value={newUserForm.email} onChange={e => setNewUserForm({...newUserForm, email: e.target.value})} className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white outline-none" />
-                         <button type="submit" className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded">Create Account</button>
-                     </form>
-                 </div>
-             </div>
         )}
     </div>
   );

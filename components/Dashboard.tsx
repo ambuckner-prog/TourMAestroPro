@@ -1,7 +1,8 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { generateFastSummary } from '../services/geminiService';
-import { Activity, Calendar, Users, PoundSterling, ArrowRight, Plus, MapPin, Building, Hash, MessageSquare, Paperclip, FileText, X, Mail, Phone, Lock, Eye, Trash2, Clock, List, Save, TrendingUp, Ticket, CheckSquare, Check, ClipboardList } from 'lucide-react';
+/* Fix: Added missing Edit2 icon import from lucide-react */
+import { Activity, Calendar, Users, PoundSterling, ArrowRight, Plus, MapPin, Building, Hash, MessageSquare, Paperclip, FileText, X, Mail, Phone, Lock, Eye, Trash2, Clock, List, Save, TrendingUp, Ticket, CheckSquare, Check, ClipboardList, RefreshCw, Sparkles, Zap, Target, Wallet, Edit2 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { TourDate, Note, UserRole, View } from '../types';
 
@@ -11,17 +12,11 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { currentTour, updateTour, currentUser, tourDates, addTourDate, setSelectedDateId, notes, addNote, deleteNote, guestRequests, financeItems } = useApp();
-  const [summary, setSummary] = useState<string>("Generating daily briefing...");
+  const [summary, setSummary] = useState<string>("Analyzing tour performance metrics...");
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   
   // Dashboard Tabs
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'SCHEDULE' | 'SALES' | 'NOTES'>('OVERVIEW');
-
-  // Quick Add Logistics State
-  const [newDate, setNewDate] = useState('');
-  const [newCity, setNewCity] = useState('');
-  const [newVenue, setNewVenue] = useState('');
-  const [newAddress, setNewAddress] = useState('');
-  const [newConfirmation, setNewConfirmation] = useState('');
 
   // Budget Edit State
   const [isEditingBudget, setIsEditingBudget] = useState(false);
@@ -37,6 +32,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
   // Filter Data for Current Tour
   const currentTourDates = tourDates.filter(d => d.tourId === currentTour?.id).sort((a,b) => a.date.localeCompare(b.date));
+  const nextShow = currentTourDates.find(d => d.date >= new Date().toISOString().split('T')[0]);
   
   // --- REAL-TIME CALCULATIONS ---
   
@@ -61,22 +57,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     .filter(n => n.tourId === currentTour?.id)
     .filter(n => {
         if (!n.visibility || n.visibility === 'Public') return true;
-        // If StaffOnly, only non-CREW can see it
         return currentUser?.role !== UserRole.CREW;
     })
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  // Check if current user is staff (can see/create private notes)
   const isStaff = currentUser?.role !== UserRole.CREW;
   const canEdit = currentUser?.role !== UserRole.CREW;
 
+  const generateBriefing = async () => {
+      if (!currentTour) return;
+      setIsGeneratingSummary(true);
+      
+      const prompt = `Role: You are "Maestro", the elite AI Tour Director for the "${currentTour.name}" tour. 
+      Your personality is professional, high-stakes, and slightly obsessed with efficiency.
+      
+      CURRENT DATA:
+      - Ticket Sales: ${salesPercent}% Sold Out (${totalSold.toLocaleString()} of ${totalCapacity.toLocaleString()} tickets).
+      - Budget: ${budgetUsedPercent}% of £${budget.toLocaleString()} utilized.
+      - Routing: ${currentTourDates.length} total shows confirmed.
+      - Next Logistics: ${nextShow ? `${nextShow.city} at ${nextShow.venue} on ${nextShow.date}` : 'Tour concluding / No upcoming dates'}.
+      - Production: Advanced 100% (Assume for narrative).
+
+      TASK: 
+      Provide a 3-sentence dynamic executive briefing.
+      Sentence 1: The current vibe of the tour based on sales (Excited if >80%, Warning if <50%, Determined otherwise).
+      Sentence 2: Financial commentary based on the ${budgetUsedPercent}% budget use.
+      Sentence 3: A call to action regarding the next stop in ${nextShow ? nextShow.city : 'the tour cycle'}.
+
+      Keep it punchy, using industry jargon where appropriate. No conversational filler like "Here is your briefing". Start immediately with the narrative.`;
+
+      const text = await generateFastSummary(prompt);
+      setSummary(text);
+      setIsGeneratingSummary(false);
+  };
+
   useEffect(() => {
-    if(currentTour) {
+    if(currentTour?.id) {
         setTempBudget(currentTour.budget);
-        const prompt = `Generate a concise, high-energy executive summary for tour manager of '${currentTour.name}'. Status: ${salesPercent}% sold out. Keep it under 50 words.`;
-        generateFastSummary(prompt).then(setSummary);
+        if (summary.includes("Analyzing") || summary.includes("Unavailable")) {
+             generateBriefing();
+        }
     }
-  }, [currentTour]);
+  }, [currentTour?.id]);
 
   const handleUpdateBudget = () => {
       if (currentTour) {
@@ -106,7 +128,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       setNoteContent('');
       setNoteFiles([]);
       setNoteType('General');
-      setNoteVisibility('Public'); // Reset to public default
+      setNoteVisibility('Public');
   };
   
   const handleDeleteNote = (id: string) => {
@@ -151,16 +173,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   return (
     <div className="h-full flex flex-col xl:flex-row overflow-hidden">
       
-      {/* LEFT CONTENT AREA (Stats, Summary, Schedule) */}
+      {/* LEFT CONTENT AREA */}
       <div className={`flex-1 p-6 overflow-y-auto custom-scrollbar flex flex-col space-y-8 ${activeTab === 'NOTES' ? 'xl:w-full' : ''}`}>
           <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
-                <h1 className="text-4xl font-bold text-white mb-2">Dashboard</h1>
-                <p className="text-slate-400 text-lg">Welcome back. Managing <span className="text-white font-bold">{currentTour?.name}</span></p>
+                <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">Dashboard</h1>
+                <p className="text-slate-400 text-lg">Command center for <span className="text-white font-bold">{currentTour?.name}</span></p>
             </div>
             
             {/* Dashboard Navigation Tabs */}
-            <div className="flex bg-maestro-800 p-1 rounded-lg border border-maestro-700">
+            <div className="flex bg-maestro-800 p-1 rounded-lg border border-maestro-700 shadow-inner">
                 <button 
                     onClick={() => setActiveTab('OVERVIEW')} 
                     className={`px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'OVERVIEW' ? 'bg-maestro-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
@@ -183,16 +205,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     onClick={() => setActiveTab('NOTES')} 
                     className={`px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'NOTES' ? 'bg-maestro-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
                 >
-                    <ClipboardList className="w-4 h-4" /> Notes & Activity
+                    <ClipboardList className="w-4 h-4" /> Activity
                 </button>
             </div>
           </header>
 
           {activeTab === 'NOTES' ? (
-              // NOTES & ACTIVITY TAB
+              /* NOTES & ACTIVITY TAB */
               <div className="flex flex-col lg:flex-row gap-8 h-full">
-                  
-                  {/* Left: Input Form */}
                   <div className="lg:w-1/3 bg-maestro-800 p-6 rounded-xl border border-maestro-700 h-fit">
                       <h3 className="font-bold text-white flex items-center gap-2 mb-4">
                           <MessageSquare className="w-5 h-5 text-maestro-gold" /> Post Update
@@ -260,7 +280,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     </form>
                   </div>
 
-                  {/* Right: Feed */}
                   <div className="flex-1 bg-maestro-800 p-6 rounded-xl border border-maestro-700 flex flex-col h-full overflow-hidden">
                       <h3 className="font-bold text-white flex items-center gap-2 mb-4 shrink-0">
                           <Activity className="w-5 h-5 text-maestro-accent" /> Activity Stream
@@ -270,9 +289,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                               <div className="text-center py-20 text-slate-500">No activity yet.</div>
                           ) : (
                               currentTourNotes.map(note => {
-                                  // Detect if this is a System Log based on author usually
                                   const isSystem = note.authorName === 'SYSTEM';
-                                  
                                   return (
                                     <div key={note.id} className={`p-4 rounded-lg border flex gap-4 ${isSystem ? 'bg-maestro-900/50 border-maestro-700' : 'bg-maestro-900 border-maestro-600 shadow-sm'}`}>
                                         <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isSystem ? 'bg-maestro-800 text-slate-500' : 'bg-maestro-700 text-white'}`}>
@@ -282,7 +299,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                             <div className="flex justify-between items-start mb-1">
                                                 <div className="flex items-center gap-2">
                                                     <span className={`font-bold text-sm ${isSystem ? 'text-slate-400' : 'text-white'}`}>{note.authorName}</span>
-                                                    {note.visibility === 'StaffOnly' && <Lock className="w-3 h-3 text-red-400" title="Private" />}
+                                                    {/* Fix: Wrapped Lock icon in span to avoid invalid title prop on icon component */}
+                                                    {note.visibility === 'StaffOnly' && <span title="Private"><Lock className="w-3 h-3 text-red-400" /></span>}
                                                     <span className="text-xs text-slate-500">•</span>
                                                     <span className="text-xs text-slate-500">{note.type}</span>
                                                 </div>
@@ -298,15 +316,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                             <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isSystem ? 'text-slate-400 italic' : 'text-slate-200'}`}>
                                                 {note.content}
                                             </p>
-                                            {note.attachments.length > 0 && (
-                                                <div className="flex flex-wrap gap-2 mt-3">
-                                                    {note.attachments.map((file, i) => (
-                                                        <div key={i} className="flex items-center gap-1 text-[10px] text-maestro-accent bg-maestro-800 px-2 py-1 rounded border border-maestro-700">
-                                                            <Paperclip className="w-3 h-3" /> {file}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
                                         </div>
                                     </div>
                                   );
@@ -316,35 +325,84 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                   </div>
               </div>
           ) : activeTab === 'OVERVIEW' ? (
-              // OVERVIEW TAB
+              /* OVERVIEW TAB (Enhanced Summary) */
               <>
-                {/* AI Summary Card */}
-                <div className="bg-gradient-to-r from-maestro-800 to-maestro-700 p-8 rounded-2xl border border-maestro-700 shadow-xl relative overflow-hidden flex-shrink-0">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                        <Activity className="w-48 h-48 text-white" />
-                    </div>
-                    <div className="relative z-10">
-                        <div className="flex items-center space-x-2 mb-3">
-                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                        <h3 className="text-sm font-semibold text-maestro-gold uppercase tracking-wider">Flash Briefing</h3>
+                <div className="bg-gradient-to-br from-maestro-800 via-maestro-800 to-indigo-900 p-1 rounded-2xl border border-maestro-700 shadow-2xl relative overflow-hidden group">
+                    <div className="bg-maestro-900/40 backdrop-blur-xl p-8 rounded-[15px] relative z-10">
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-4">
+                                <div className="bg-maestro-accent/20 p-3 rounded-xl">
+                                    <Sparkles className="w-6 h-6 text-maestro-accent" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Maestro Intelligence</h3>
+                                    <p className="text-xs text-maestro-accent font-bold">24/7 Production Oversight</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={generateBriefing} 
+                                disabled={isGeneratingSummary}
+                                className={`flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all border border-white/10 ${isGeneratingSummary ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                                <RefreshCw className={`w-3 h-3 ${isGeneratingSummary ? 'animate-spin' : ''}`} />
+                                Refresh Status
+                            </button>
                         </div>
-                        <p className="text-xl text-slate-200 leading-relaxed font-light">
-                        {summary}
-                        </p>
+
+                        {isGeneratingSummary ? (
+                            <div className="space-y-4 animate-pulse">
+                                <div className="h-4 bg-slate-700 rounded w-3/4"></div>
+                                <div className="h-4 bg-slate-700 rounded w-full"></div>
+                                <div className="h-4 bg-slate-700 rounded w-5/6"></div>
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                <p className="text-2xl text-slate-100 leading-relaxed font-light italic">
+                                    "{summary}"
+                                </p>
+                                
+                                {/* KPI Highlight Row */}
+                                <div className="flex flex-wrap gap-4 pt-4 border-t border-white/5">
+                                    <div className="flex items-center gap-3 bg-maestro-900/60 px-4 py-3 rounded-xl border border-white/5">
+                                        <Target className="w-4 h-4 text-green-400" />
+                                        <div>
+                                            <div className="text-[10px] text-slate-500 uppercase font-bold">Sales Target</div>
+                                            <div className="text-sm font-bold text-white">{salesPercent}% Capacity</div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 bg-maestro-900/60 px-4 py-3 rounded-xl border border-white/5">
+                                        <Wallet className="w-4 h-4 text-maestro-gold" />
+                                        <div>
+                                            <div className="text-[10px] text-slate-500 uppercase font-bold">Budget Burn</div>
+                                            <div className="text-sm font-bold text-white">{budgetUsedPercent}% Utilized</div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 bg-maestro-900/60 px-4 py-3 rounded-xl border border-white/5">
+                                        <Zap className="w-4 h-4 text-blue-400" />
+                                        <div>
+                                            <div className="text-[10px] text-slate-500 uppercase font-bold">Next Event</div>
+                                            <div className="text-sm font-bold text-white">{nextShow ? nextShow.city : 'Final Leg'}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
+                    {/* Background Decorative Element */}
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-maestro-accent/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
                 </div>
 
-                {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 flex-shrink-0">
+                {/* Main Stats Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     {stats.map((stat, idx) => (
-                    <div key={idx} className="bg-maestro-800 p-6 rounded-xl border border-maestro-700 hover:border-maestro-accent transition-colors">
+                    <div key={idx} className="bg-maestro-800 p-6 rounded-xl border border-maestro-700 hover:border-maestro-accent transition-all hover:shadow-lg hover:-translate-y-1">
                         <div className="flex justify-between items-start mb-4">
-                        <div className={`p-3 rounded-lg bg-opacity-10 bg-white ${stat.color}`}>
+                        <div className={`p-3 rounded-xl bg-opacity-10 bg-white ${stat.color}`}>
                             <stat.icon className="w-6 h-6" />
                         </div>
                         </div>
                         <div className="text-2xl font-bold text-white">{stat.value}</div>
-                        <div className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">{stat.label}</div>
+                        <div className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">{stat.label}</div>
                         <div className="text-xs text-slate-400">{stat.sub}</div>
                     </div>
                     ))}
@@ -368,7 +426,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                         <button onClick={handleUpdateBudget} className="text-green-400 hover:text-white"><Save className="w-4 h-4"/></button>
                                     </div>
                                 ) : (
-                                    canEdit && <button onClick={() => setIsEditingBudget(true)} className="text-maestro-accent hover:text-white"><Activity className="w-4 h-4"/></button>
+                                    /* Fix: Corrected line where Edit2 was previously not imported */
+                                    canEdit && <button onClick={() => setIsEditingBudget(true)} className="text-maestro-accent hover:text-white"><Edit2 className="w-4 h-4"/></button>
                                 )}
                             </div>
                             
@@ -390,9 +449,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                 <span>Spent: £{totalExpenses.toLocaleString()}</span>
                                 <span>Rem: £{(budget - totalExpenses).toLocaleString()}</span>
                             </div>
-                            <p className="text-xs text-slate-500 mt-4 italic">
-                                This budget reflects across all financial reporting. Update here to adjust the tour's total cap.
-                            </p>
                         </div>
                     </div>
 
@@ -402,10 +458,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                             <h3 className="font-bold text-white text-lg">Upcoming Schedule</h3>
                             <button onClick={() => setActiveTab('SCHEDULE')} className="text-maestro-accent text-sm font-bold hover:underline">View All</button>
                         </div>
-                        {/* CHANGED: Removed max-h-[500px] and overflow-y-auto to allow full page scrolling */}
                         <div className="space-y-4">
                             {currentTourDates.length === 0 ? (
-                                <div className="text-slate-500 text-sm italic py-8 text-center bg-maestro-900/50 rounded-lg">No dates added yet. Use the Schedule tab to start routing.</div>
+                                <div className="text-slate-500 text-sm italic py-8 text-center bg-maestro-900/50 rounded-lg border border-dashed border-maestro-700">No dates added yet.</div>
                             ) : (
                                 currentTourDates.slice(0, 5).map(date => (
                                     <div 
@@ -414,7 +469,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                         className="flex items-center justify-between p-4 bg-maestro-900 rounded-lg hover:bg-maestro-700 cursor-pointer border border-transparent hover:border-maestro-accent transition-all group"
                                     >
                                         <div className="flex items-center gap-6">
-                                            <div className="text-center bg-maestro-800 p-3 rounded-lg w-16 group-hover:bg-maestro-600 transition-colors">
+                                            <div className="text-center bg-maestro-800 p-3 rounded-lg w-16 group-hover:bg-maestro-600 transition-colors border border-maestro-700">
                                                 <div className="text-xs text-slate-500 uppercase font-bold">{date.date.split('-')[1]}/{date.date.split('-')[2]}</div>
                                                 <div className="font-bold text-white text-xl">{date.date.split('-')[0].slice(2)}</div>
                                             </div>
@@ -439,7 +494,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 </div>
               </>
           ) : activeTab === 'SALES' ? (
-              // SALES TAB
+              /* SALES TAB */
               <div className="bg-maestro-800 p-8 rounded-xl border border-maestro-700 min-h-[500px] animate-fadeIn">
                   <div className="flex justify-between items-center mb-6">
                       <div>
@@ -493,7 +548,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                   </div>
               </div>
           ) : (
-              // SCHEDULE TAB
+              /* SCHEDULE TAB */
               <div className="bg-maestro-800 p-8 rounded-xl border border-maestro-700 min-h-[500px] animate-fadeIn">
                   <div className="flex justify-between items-center mb-6">
                       <div>
@@ -539,11 +594,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                       </tr>
                                   );
                               })}
-                              {currentTourDates.length === 0 && (
-                                  <tr>
-                                      <td colSpan={5} className="p-8 text-center text-slate-500">No dates found.</td>
-                                  </tr>
-                              )}
                           </tbody>
                       </table>
                   </div>
@@ -551,7 +601,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           )}
       </div>
 
-      {/* RIGHT COLUMN: QUICK NOTES SIDEBAR (Visible only when NOT in Notes tab to prevent duplication) */}
+      {/* RIGHT COLUMN: QUICK LOG SIDEBAR */}
       {activeTab !== 'NOTES' && (
         <div className="hidden xl:flex w-96 bg-maestro-800 border-l border-maestro-700 flex-col h-full z-10 shadow-xl flex-shrink-0">
             <div className="p-4 border-b border-maestro-700 bg-maestro-900 flex justify-between items-center h-16 shrink-0">
@@ -563,7 +613,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 </div>
             </div>
 
-            {/* Note Input */}
             <div className="p-4 border-b border-maestro-700 bg-maestro-800 shrink-0">
                 <form onSubmit={handleAddNote}>
                     <textarea 
@@ -573,69 +622,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                         className="w-full bg-maestro-900 border border-maestro-700 rounded-lg p-3 text-sm text-white placeholder-slate-500 resize-none outline-none mb-3 focus:ring-1 focus:ring-maestro-accent"
                         rows={3}
                     />
-                    {noteFiles.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-3">
-                            {noteFiles.map((file, i) => (
-                                <span key={i} className="text-[10px] bg-maestro-800 px-2 py-1 rounded flex items-center gap-1 text-slate-300 border border-maestro-700">
-                                    <FileText className="w-3 h-3" /> {file}
-                                    <button type="button" onClick={() => setNoteFiles(noteFiles.filter((_, idx) => idx !== i))}><X className="w-3 h-3 hover:text-red-400" /></button>
-                                </span>
-                            ))}
-                        </div>
-                    )}
-                    <div className="space-y-2">
-                        {isStaff && (
-                            <div className="flex items-center gap-2">
-                                <label className={`flex items-center gap-1 text-xs cursor-pointer select-none px-2 py-1 rounded border ${noteVisibility === 'StaffOnly' ? 'bg-red-900/30 border-red-500/50 text-red-300' : 'border-transparent text-slate-400'}`}>
-                                    <input 
-                                        type="checkbox" 
-                                        className="hidden"
-                                        checked={noteVisibility === 'StaffOnly'}
-                                        onChange={(e) => setNoteVisibility(e.target.checked ? 'StaffOnly' : 'Public')}
-                                    />
-                                    {noteVisibility === 'StaffOnly' ? <Lock className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                                    Staff Only (Private)
-                                </label>
-                            </div>
-                        )}
-
-                        <div className="flex justify-between items-center">
-                            <div className="flex gap-2">
-                                <select 
-                                    value={noteType} 
-                                    onChange={(e) => setNoteType(e.target.value as any)}
-                                    className="bg-maestro-900 text-xs text-slate-300 p-1.5 rounded border border-maestro-700 outline-none"
-                                >
-                                    <option value="General">General</option>
-                                    <option value="Call">Call</option>
-                                    <option value="Email">Email</option>
-                                    <option value="Meeting">Meeting</option>
-                                </select>
-                                <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-maestro-900 border border-maestro-700 hover:bg-maestro-700 text-slate-300 p-1.5 rounded" title="Attach File">
-                                    <Paperclip className="w-4 h-4" />
-                                </button>
-                                <input 
-                                    type="file" 
-                                    ref={fileInputRef} 
-                                    className="hidden" 
-                                    onChange={handleFileChange}
-                                    multiple
-                                />
-                            </div>
-                            <button type="submit" className="text-xs bg-maestro-accent hover:bg-violet-600 text-white px-4 py-2 rounded font-bold transition-colors">
-                                Post
+                    <div className="flex justify-between items-center">
+                        <div className="flex gap-2">
+                            <select 
+                                value={noteType} 
+                                onChange={(e) => setNoteType(e.target.value as any)}
+                                className="bg-maestro-900 text-xs text-slate-300 p-1.5 rounded border border-maestro-700 outline-none"
+                            >
+                                <option value="General">General</option>
+                                <option value="Call">Call</option>
+                                <option value="Email">Email</option>
+                                <option value="Meeting">Meeting</option>
+                            </select>
+                            <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-maestro-900 border border-maestro-700 hover:bg-maestro-700 text-slate-300 p-1.5 rounded" title="Attach File">
+                                <Paperclip className="w-4 h-4" />
                             </button>
+                            <input 
+                                type="file" 
+                                ref={fileInputRef} 
+                                className="hidden" 
+                                onChange={handleFileChange}
+                                multiple
+                            />
                         </div>
+                        <button type="submit" className="text-xs bg-maestro-accent hover:bg-violet-600 text-white px-4 py-2 rounded font-bold transition-colors">
+                            Post
+                        </button>
                     </div>
                 </form>
             </div>
 
-            {/* Notes List */}
             <div className="flex-1 overflow-y-auto space-y-3 p-4 custom-scrollbar bg-maestro-900/30">
                 {currentTourNotes.length === 0 ? (
                     <div className="text-center text-slate-500 text-sm mt-10">
                         <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                        No notes available.
+                        No logs recorded yet.
                     </div>
                 ) : (
                     currentTourNotes.map(note => {
@@ -644,41 +665,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                             <div key={note.id} className={`bg-maestro-800 p-3 rounded-lg border hover:border-maestro-600 transition-colors shadow-sm relative group ${note.visibility === 'StaffOnly' ? 'border-red-900/50 bg-red-900/10' : 'border-maestro-700'}`}>
                                 {note.visibility === 'StaffOnly' && (
                                     <div className="absolute top-2 right-2 flex items-center gap-1 text-[9px] font-bold text-red-400 bg-red-900/30 px-1.5 py-0.5 rounded border border-red-500/20">
-                                        <Lock className="w-2.5 h-2.5" /> STAFF ONLY
+                                        <Lock className="w-2.5 h-2.5" /> STAFF
                                     </div>
-                                )}
-                                {canEdit && !isSystem && (
-                                    <button 
-                                        onClick={() => handleDeleteNote(note.id)} 
-                                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 bg-maestro-900 rounded text-slate-400 hover:text-red-500 transition-opacity"
-                                        title="Delete Note"
-                                    >
-                                        <Trash2 className="w-3 h-3" />
-                                    </button>
                                 )}
                                 <div className="flex items-center justify-between mb-2 pb-2 border-b border-white/5">
                                     <div className="flex items-center gap-2">
                                         {getNoteIcon(note.type, isSystem)}
                                         <span className="text-[10px] font-bold text-slate-300 uppercase">{note.type}</span>
                                     </div>
-                                    <div className="text-[10px] text-slate-500 font-mono pr-16">
+                                    <div className="text-[10px] text-slate-500 font-mono">
                                         {formatNoteDate(note.date)}
                                     </div>
                                 </div>
                                 <p className={`text-sm mb-2 whitespace-pre-wrap leading-relaxed ${isSystem ? 'text-slate-400 italic' : 'text-slate-200'}`}>{note.content}</p>
-                                
-                                {note.attachments.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 mb-2 mt-2">
-                                        {note.attachments.map((file, i) => (
-                                            <div key={i} className="flex items-center gap-1 text-[10px] text-maestro-accent bg-maestro-900 px-2 py-1 rounded border border-maestro-700">
-                                                <Paperclip className="w-3 h-3" /> {file}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                                
                                 <div className="flex items-center justify-end gap-1 mt-1 pt-1">
-                                    <span className="text-[10px] text-slate-500 uppercase font-bold">By</span>
                                     <div className="flex items-center gap-1 text-[10px] text-slate-400">
                                         <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] ${isSystem ? 'bg-slate-800 text-slate-500' : 'bg-slate-700 text-white'}`}>
                                             {isSystem ? 'S' : note.authorName.charAt(0)}

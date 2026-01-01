@@ -2,9 +2,20 @@
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { AspectRatio, ImageSize, VenueDocument } from "../types";
 
-// Ensure process.env.API_KEY is available or handled by the component layer via window.aistudio for Veo
-const apiKey = process.env.API_KEY || ''; 
-const ai = new GoogleGenAI({ apiKey });
+/* Fix: Removed top-level ai client initialization. 
+   Coding Guidelines require creating a new GoogleGenAI instance right before making an API call 
+   to ensure the most up-to-date API key is used. */
+
+// Helper to handle API errors
+const handleGeminiError = (error: any, fallbackText: string) => {
+    // Only warn for 429s, otherwise error
+    if (error.message?.includes('429') || error.status === 'RESOURCE_EXHAUSTED' || error.code === 429) {
+        console.warn("Gemini Quota Exceeded (429). returning fallback.");
+        return `${fallbackText} (System busy - Rate limit exceeded)`;
+    }
+    console.error("Gemini API Error:", error);
+    return fallbackText;
+};
 
 // Helper to check Veo permissions
 export const checkVeoKey = async (): Promise<boolean> => {
@@ -13,7 +24,9 @@ export const checkVeoKey = async (): Promise<boolean> => {
     const hasKey = await aistudio.hasSelectedApiKey();
     if (!hasKey) {
       await aistudio.openSelectKey();
-      return await aistudio.hasSelectedApiKey();
+      /* Fix: Guideline requires assuming success after triggering openSelectKey() 
+         to mitigate race conditions where hasSelectedApiKey() might not immediately reflect the update. */
+      return true;
     }
     return true;
   }
@@ -21,24 +34,29 @@ export const checkVeoKey = async (): Promise<boolean> => {
 };
 
 // --- GENERIC TEXT GENERATION ---
-export const generateText = async (prompt: string, model: string = 'gemini-2.5-flash'): Promise<string> => {
+/* Fix: Defaulted to gemini-3-flash-preview for general text tasks */
+export const generateText = async (prompt: string, model: string = 'gemini-3-flash-preview'): Promise<string> => {
     try {
+        /* Fix: Initialize client with latest process.env.API_KEY per guidelines */
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
         const response = await ai.models.generateContent({
             model: model,
             contents: prompt
         });
         return response.text || "No response generated.";
     } catch (e) {
-        console.error("Generate Text Error:", e);
-        return "Error generating content.";
+        return handleGeminiError(e, "Unable to generate text at this time.");
     }
 };
 
 // --- TRAVEL PARSING (JSON Schema) ---
 export const parseTravelDetails = async (text: string) => {
   try {
+    /* Fix: Initialize client with latest process.env.API_KEY per guidelines */
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      /* Fix: Upgrade to gemini-3-flash-preview for parsing tasks */
+      model: 'gemini-3-flash-preview',
       contents: `Extract travel details from the following text into a structured JSON object. 
       Text: "${text}"
       If specific fields are missing, make a best guess or leave empty string.
@@ -72,15 +90,16 @@ export const parseTravelDetails = async (text: string) => {
 // --- FLASH LITE (Fast Responses) ---
 export const generateFastSummary = async (prompt: string): Promise<string> => {
   try {
-    // Switched to gemini-2.5-flash as the previous lite model name was causing 404s
+    /* Fix: Initialize client with latest process.env.API_KEY per guidelines */
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    /* Fix: Using gemini-3-flash-preview for summarization (Basic Text Tasks) */
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash', 
+      model: 'gemini-3-flash-preview', 
       contents: prompt,
     });
     return response.text || "No summary available.";
   } catch (error) {
-    console.error("Fast summary failed:", error);
-    return "Could not generate summary.";
+    return handleGeminiError(error, "Briefing unavailable.");
   }
 };
 
@@ -108,7 +127,10 @@ export const askMaps = async (query: string, latitude?: number, longitude?: numb
   }
 
   try {
+    /* Fix: Initialize client with latest process.env.API_KEY per guidelines */
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
     const response = await ai.models.generateContent({
+      /* Maps grounding requires 2.5 series */
       model: 'gemini-2.5-flash',
       contents: query,
       config
@@ -129,23 +151,33 @@ export const askMaps = async (query: string, latitude?: number, longitude?: numb
 
 // --- SEARCH GROUNDING ---
 export const askSearch = async (query: string) => {
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: query,
-    config: {
-      tools: [{ googleSearch: {} }]
-    }
-  });
+  try {
+    /* Fix: Initialize client with latest process.env.API_KEY per guidelines */
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const response = await ai.models.generateContent({
+      /* Fix: Upgrade to gemini-3-flash-preview for search grounded queries */
+      model: 'gemini-3-flash-preview',
+      contents: query,
+      config: {
+        tools: [{ googleSearch: {} }]
+      }
+    });
 
-  return {
-    text: response.text,
-    chunks: response.candidates?.[0]?.groundingMetadata?.groundingChunks
-  };
+    return {
+      text: response.text,
+      chunks: response.candidates?.[0]?.groundingMetadata?.groundingChunks
+    };
+  } catch (error) {
+      console.error("Search request failed:", error);
+      return { text: "Search currently unavailable.", chunks: [] };
+  }
 };
 
 // --- VENUE DOC SCRAPER ---
 export const findVenueDocuments = async (venue: string, city: string): Promise<VenueDocument[]> => {
   try {
+    /* Fix: Initialize client with latest process.env.API_KEY per guidelines */
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
     // Enhanced prompt prioritizing Stage Plots and Technical Riders
     const query = `Find "Technical Rider" PDF, "Stage Plot" PDF, or "Production Pack" PDF for ${venue} in ${city}. Focus on official venue technical specifications.`;
     const response = await ai.models.generateContent({
@@ -207,103 +239,132 @@ export const findVenueDocuments = async (venue: string, city: string): Promise<V
 
 // --- IMAGE ANALYSIS (Pro) ---
 export const analyzeImage = async (base64Image: string, prompt: string) => {
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: {
-      parts: [
-        { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-        { text: prompt }
-      ]
-    }
-  });
-  return response.text;
+  try {
+    /* Fix: Initialize client with latest process.env.API_KEY per guidelines */
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const response = await ai.models.generateContent({
+        /* Complex Text Tasks with vision -> Pro preview */
+        model: 'gemini-3-pro-preview',
+        contents: {
+        parts: [
+            { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
+            { text: prompt }
+        ]
+        }
+    });
+    return response.text;
+  } catch (e) {
+      return handleGeminiError(e, "Image analysis failed.");
+  }
 };
 
 // --- IMAGE GENERATION (Pro + Size + Ratio) ---
 export const generateImage = async (prompt: string, aspectRatio: AspectRatio, size: ImageSize) => {
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
-    contents: { parts: [{ text: prompt }] },
-    config: {
-      imageConfig: {
-        aspectRatio: aspectRatio,
-        imageSize: size
-      }
-    }
-  });
+  try {
+    /* Fix: Initialize client with latest process.env.API_KEY per guidelines */
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-image-preview',
+        contents: { parts: [{ text: prompt }] },
+        config: {
+        imageConfig: {
+            aspectRatio: aspectRatio,
+            imageSize: size
+        }
+        }
+    });
 
-  for (const part of response.candidates?.[0]?.content?.parts || []) {
-    if (part.inlineData) {
-      return `data:image/png;base64,${part.inlineData.data}`;
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+        }
     }
+    return null;
+  } catch (e) {
+      console.error(e);
+      return null;
   }
-  return null;
 };
 
 // --- IMAGE EDITING (Flash Image) ---
 export const editImage = async (base64Image: string, prompt: string) => {
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image',
-    contents: {
-      parts: [
-        { inlineData: { mimeType: 'image/png', data: base64Image } }, // User upload
-        { text: prompt } // "Add a retro filter"
-      ]
-    }
-  });
+  try {
+    /* Fix: Initialize client with latest process.env.API_KEY per guidelines */
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+        parts: [
+            { inlineData: { mimeType: 'image/png', data: base64Image } }, // User upload
+            { text: prompt } // "Add a retro filter"
+        ]
+        }
+    });
 
-  for (const part of response.candidates?.[0]?.content?.parts || []) {
-    if (part.inlineData) {
-      return `data:image/png;base64,${part.inlineData.data}`;
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+        }
     }
+    return null;
+  } catch (e) {
+      console.error(e);
+      return null;
   }
-  return null;
 };
 
 // --- VIDEO GENERATION (Veo) ---
 export const generateVideo = async (prompt: string, aspectRatio: '16:9' | '9:16', imageBase64?: string): Promise<string | null> => {
-  await checkVeoKey();
-  const tempAi = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-  let operation;
-  
-  if (imageBase64) {
-    operation = await tempAi.models.generateVideos({
-      model: 'veo-3.1-fast-generate-preview',
-      prompt: prompt || "Animate this image", 
-      image: {
-        imageBytes: imageBase64,
-        mimeType: 'image/png' 
-      },
-      config: {
-        numberOfVideos: 1,
-        resolution: '720p', 
-        aspectRatio: aspectRatio
-      }
-    });
-  } else {
-    operation = await tempAi.models.generateVideos({
-      model: 'veo-3.1-fast-generate-preview',
-      prompt: prompt,
-      config: {
-        numberOfVideos: 1,
-        resolution: '720p',
-        aspectRatio: aspectRatio
-      }
-    });
-  }
+  try {
+    await checkVeoKey();
+    /* Fix: Create new instance using latest API key from env before calling generateVideos */
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    let operation;
+    
+    if (imageBase64) {
+        operation = await ai.models.generateVideos({
+        model: 'veo-3.1-fast-generate-preview',
+        prompt: prompt || "Animate this image", 
+        image: {
+            imageBytes: imageBase64,
+            mimeType: 'image/png' 
+        },
+        config: {
+            numberOfVideos: 1,
+            resolution: '720p', 
+            aspectRatio: aspectRatio
+        }
+        });
+    } else {
+        operation = await ai.models.generateVideos({
+        model: 'veo-3.1-fast-generate-preview',
+        prompt: prompt,
+        config: {
+            numberOfVideos: 1,
+            resolution: '720p',
+            aspectRatio: aspectRatio
+        }
+        });
+    }
 
-  while (!operation.done) {
-    await new Promise(resolve => setTimeout(resolve, 5000)); 
-    operation = await tempAi.operations.getVideosOperation({ operation: operation });
-  }
+    while (!operation.done) {
+        await new Promise(resolve => setTimeout(resolve, 5000)); 
+        operation = await ai.operations.getVideosOperation({ operation: operation });
+    }
 
-  const uri = operation.response?.generatedVideos?.[0]?.video?.uri;
-  if (!uri) return null;
-  return `${uri}&key=${process.env.API_KEY}`;
+    const uri = operation.response?.generatedVideos?.[0]?.video?.uri;
+    if (!uri) return null;
+    return `${uri}&key=${process.env.API_KEY}`;
+  } catch (e) {
+      console.error("Veo generation failed", e);
+      return null;
+  }
 };
 
 // --- CHAT (Pro) ---
 export const createChat = (systemInstruction: string) => {
+  /* Fix: Initialize client with latest process.env.API_KEY per guidelines */
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   return ai.chats.create({
     model: 'gemini-3-pro-preview',
     config: { systemInstruction }
@@ -312,21 +373,28 @@ export const createChat = (systemInstruction: string) => {
 
 // --- TTS ---
 export const generateSpeech = async (text: string): Promise<string | null> => {
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-preview-tts',
-    contents: [{ parts: [{ text }] }],
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: 'Kore' }, 
+  try {
+    /* Fix: Initialize client with latest process.env.API_KEY per guidelines */
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-preview-tts',
+        contents: [{ parts: [{ text }] }],
+        config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+            voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Kore' }, 
+            },
         },
-      },
-    },
-  });
+        },
+    });
 
-  const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  return base64Audio || null;
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    return base64Audio || null;
+  } catch (e) {
+      console.error("TTS Failed", e);
+      return null;
+  }
 };
 
 

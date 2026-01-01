@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Map, Calendar, CheckSquare, Send, Users, 
   Music2, PoundSterling, Paperclip, Globe, Video, Mic2, Menu, X, 
   CalendarDays, ChevronDown, PlusCircle, LogOut, ArrowRight, Mic, 
-  Settings, Check, LayoutGrid, ShieldAlert, Bell, Inbox, Cloud, RefreshCw
+  Settings, Check, LayoutGrid, ShieldAlert, Bell, Inbox, Cloud, RefreshCw, AlertTriangle
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -16,7 +16,7 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, children }) => {
-  const { currentUser, currentTour, tours, logout, selectTour, createTour, notification, clearNotification, emailLogs, lastSaveTime, forceSave } = useApp();
+  const { currentUser, currentTour, tours, logout, selectTour, createTour, notification, clearNotification, emailLogs, lastSaveTime, forceSave, storageUsage } = useApp();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isTourDropdownOpen, setIsTourDropdownOpen] = React.useState(false);
   
@@ -69,6 +69,12 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, chi
       (currentUser?.assignedTourIds && currentUser.assignedTourIds.includes(t.id))
   );
 
+  const getStorageStatusColor = (usage: number) => {
+      if (usage > 90) return 'text-red-500';
+      if (usage > 70) return 'text-yellow-500';
+      return 'text-green-500';
+  };
+
   return (
     <div className="flex h-screen bg-maestro-900 text-slate-100 overflow-hidden font-sans">
       
@@ -84,7 +90,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, chi
                   notification.type === 'error' ? 'bg-red-800' :
                   'bg-blue-800'
               }`}>
-                  <Bell className="w-4 h-4 text-white" />
+                  {notification.type === 'error' ? <AlertTriangle className="w-4 h-4 text-white" /> : <Bell className="w-4 h-4 text-white" />}
               </div>
               <div className="flex-1">
                   <h4 className="font-bold text-sm">{notification.message}</h4>
@@ -179,7 +185,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, chi
                 <span className="bg-blue-600 text-white text-[10px] px-1.5 rounded-full font-bold">{emailLogs.length}</span>
             </button>
 
-            {/* Back Office Society - AM BUCKNER ONLY */}
+            {/* Back Office Society - MASTER ONLY */}
              {isMasterAdmin && (
                 <>
                     <div className="my-2 border-t border-maestro-700 mx-4"></div>
@@ -266,15 +272,20 @@ export const Layout: React.FC<LayoutProps> = ({ currentView, setCurrentView, chi
             {/* Sync Indicator */}
             <button 
                 onClick={forceSave}
-                className="w-full flex items-center justify-between text-[10px] bg-maestro-900 p-2 rounded text-slate-400 hover:text-white hover:bg-maestro-700 transition-colors border border-maestro-700"
+                className="w-full flex items-center justify-between text-[10px] bg-maestro-900 p-2 rounded text-slate-400 hover:text-white hover:bg-maestro-700 transition-colors border border-maestro-700 group"
                 title="Force Cloud Sync"
             >
                 <div className="flex items-center gap-2">
-                    <Cloud className="w-3 h-3 text-green-500" />
+                    <Cloud className={`w-3 h-3 ${getStorageStatusColor(storageUsage)}`} />
                     <span>Last Saved: {lastSaveTime ? lastSaveTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}</span>
                 </div>
-                <RefreshCw className="w-3 h-3 opacity-50" />
+                <RefreshCw className="w-3 h-3 opacity-50 group-hover:rotate-180 transition-transform" />
             </button>
+            {storageUsage > 90 && (
+                <div className="text-[9px] text-red-400 mt-1 text-center font-bold animate-pulse">
+                    Storage Critical ({storageUsage.toFixed(0)}%)
+                </div>
+            )}
         </div>
       </aside>
 

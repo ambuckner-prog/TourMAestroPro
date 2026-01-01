@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { createChat, generateSpeech, playAudio } from '../services/geminiService';
 import { ChatMessage } from '../types';
@@ -49,7 +50,8 @@ export const RoadManager: React.FC = () => {
         const modelMsg: ChatMessage = {
             id: (Date.now() + 1).toString(),
             role: 'model',
-            text: result.response.text(),
+            /* Fix: Accessing .text property directly as per @google/genai guidelines (not a method) */
+            text: result.text || '',
             timestamp: new Date()
         };
         setMessages(prev => [...prev, modelMsg]);
