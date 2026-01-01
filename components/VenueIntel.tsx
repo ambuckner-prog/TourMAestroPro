@@ -1,258 +1,211 @@
-
 import React, { useState } from 'react';
 import { askSearch, analyzeImage } from '../services/geminiService';
 import { useApp } from '../contexts/AppContext';
-import { Upload, Search, FileText, Loader2, LinkIcon, Zap, Ruler, Users, Info, Phone, Save } from 'lucide-react';
-import { GroundingChunk } from '../types';
+// Added missing User and Building imports
+import { Upload, Search, FileText, Loader2, LinkIcon, Zap, Ruler, Users, Info, Phone, Save, Mail, MapPin, User, Building } from 'lucide-react';
+import { GroundingChunk, TourDate } from '../types';
 
 export const VenueIntel: React.FC = () => {
-  const { addNote, currentTour, currentUser } = useApp();
-  const [activeTab, setActiveTab] = useState<'search' | 'analyze'>('search');
+  const { addNote, currentTour, currentUser, tourDates, updateTourDate } = useApp();
+  const [activeTab, setActiveTab] = useState<'search' | 'analyze' | 'directory'>('search');
   
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResult, setSearchResult] = useState<{text: string, chunks?: GroundingChunk[]} | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   
-  // New State for Phone Saving
-  const [phoneInput, setPhoneInput] = useState('');
-
   // Analyze State
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  // Updated prompt to specifically target the requested data points
   const [analyzePrompt, setAnalyzePrompt] = useState(
-    'Analyze this tech rider or stage plot image. \n' +
-    'Please extract and structure the following details strictly:\n\n' +
-    '1. ⚡ POWER REQUIREMENTS: Amps, Phases, Voltage, Camlock/Feeder info.\n' +
-    '2. 📏 STAGE DIMENSIONS: Width, Depth, Deck Height, Overhead Clearance.\n' +
-    '3. ☎️ CONTACT PERSONS: Name, Role, Email, Phone number.\n\n' +
-    'Format the output with clear headers and bullet points. If information is missing, state "Not specified in document".'
+    'Analyze this tech rider or stage plot image and extract:\n\n' +
+    '1. ⚡ POWER: Voltage, Amps, Phases, Tie-in points.\n' +
+    '2. 📏 DIMENSIONS: Stage Width/Depth, Trim Height.\n' +
+    '3. ☎️ KEY CONTACTS: PM Name, Direct Phone, Email.'
   );
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // Directory State
+  const [selectedDateId, setSelectedDateId] = useState<string>(tourDates[0]?.id || '');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const activeDate = tourDates.find(d => d.id === selectedDateId);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery) return;
     setIsSearching(true);
-    setSearchResult(null); // Clear previous results while searching
-    setPhoneInput(''); // Reset phone input
     try {
         const result = await askSearch(searchQuery);
-        // Cast chunks to ensure compatibility with local GroundingChunk type
         setSearchResult({
             text: result.text || "",
             chunks: result.chunks ? (result.chunks as unknown as GroundingChunk[]) : undefined
         });
-    } catch (e) {
-        console.error(e);
-    } finally {
-        setIsSearching(false);
-    }
-  };
-
-  const handleSavePhone = () => {
-      if (!phoneInput || !currentTour || !currentUser) return;
-      
-      addNote({
-          id: Math.random().toString(36).substr(2, 9),
-          tourId: currentTour.id,
-          content: `[Venue Intel] Search: "${searchQuery}"\nSaved Phone: ${phoneInput}\n\nContext excerpt:\n${searchResult?.text.substring(0, 150)}...`,
-          type: 'General',
-          authorName: currentUser.name,
-          date: new Date().toISOString(),
-          attachments: []
-      });
-      
-      setPhoneInput('');
-      alert("Phone number saved to Dashboard Notes.");
+    } catch (e) { console.error(e); }
+    finally { setIsSearching(false); }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result as string;
-        setSelectedImage(base64);
-        // Automatically start analysis when image is selected for smoother UX
-        const data = base64.split(',')[1];
-        handleAnalyze(data);
-      };
+      reader.onloadend = () => { setSelectedImage(reader.result as string); };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleAnalyze = async (base64Data: string) => {
+  const handleAnalyze = async () => {
+    if (!selectedImage) return;
     setIsAnalyzing(true);
     try {
-        const text = await analyzeImage(base64Data, analyzePrompt);
+        const text = await analyzeImage(selectedImage.split(',')[1], analyzePrompt);
         setAnalysisResult(text || "Could not analyze image.");
-    } catch (e) {
-        setAnalysisResult("Error analyzing image.");
-    } finally {
-        setIsAnalyzing(false);
-    }
+    } catch (e) { setAnalysisResult("Error analyzing image."); }
+    finally { setIsAnalyzing(false); }
+  };
+
+  const handleUpdateContact = (field: keyof TourDate, value: string) => {
+      if (selectedDateId) {
+          updateTourDate(selectedDateId, { [field]: value });
+      }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 h-full overflow-y-auto p-6">
         <header>
             <h1 className="text-3xl font-bold text-white">Venue Intelligence</h1>
-            <p className="text-slate-400">Search Grounding & Tech Rider Analysis (Gemini 3 Pro)</p>
+            <p className="text-slate-400">Technical Data Mining & Professional Directory</p>
         </header>
 
-        <div className="flex space-x-4 border-b border-maestro-700">
-            <button 
-                onClick={() => setActiveTab('search')}
-                className={`pb-4 px-4 font-medium transition-colors ${activeTab === 'search' ? 'text-maestro-accent border-b-2 border-maestro-accent' : 'text-slate-500'}`}
-            >
-                Live Search
-            </button>
-            <button 
-                onClick={() => setActiveTab('analyze')}
-                className={`pb-4 px-4 font-medium transition-colors ${activeTab === 'analyze' ? 'text-maestro-accent border-b-2 border-maestro-accent' : 'text-slate-500'}`}
-            >
-                Tech Spec Analysis
-            </button>
+        <div className="flex space-x-4 border-b border-maestro-700 bg-maestro-900/50 rounded-t-xl p-1 w-fit">
+            <button onClick={() => setActiveTab('search')} className={`py-2 px-6 rounded-lg font-bold text-sm transition-all ${activeTab === 'search' ? 'bg-maestro-accent text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Live Search</button>
+            <button onClick={() => setActiveTab('analyze')} className={`py-2 px-6 rounded-lg font-bold text-sm transition-all ${activeTab === 'analyze' ? 'bg-maestro-accent text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Tech Plot Analysis</button>
+            <button onClick={() => setActiveTab('directory')} className={`py-2 px-6 rounded-lg font-bold text-sm transition-all ${activeTab === 'directory' ? 'bg-maestro-accent text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Contact Directory</button>
         </div>
 
-        {activeTab === 'search' ? (
+        {activeTab === 'search' && (
             <div className="space-y-6 animate-fadeIn">
                 <form onSubmit={handleSearch} className="flex gap-2">
                     <input 
                         type="text" 
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search for venue capacity, curfew rules, or recent news..."
-                        className="flex-1 bg-maestro-800 border border-maestro-700 text-white p-3 rounded-lg focus:ring-1 focus:ring-maestro-accent outline-none"
+                        placeholder="Search venue capacity, load-in rules, or recent curfews..."
+                        className="flex-1 bg-maestro-800 border border-maestro-700 text-white p-4 rounded-xl focus:ring-1 focus:ring-maestro-accent outline-none"
                     />
-                    <button type="submit" disabled={isSearching} className="bg-maestro-accent hover:bg-violet-600 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2">
-                        {isSearching ? <Loader2 className="animate-spin" /> : <Search className="w-4 h-4" />}
-                        Search
+                    <button type="submit" disabled={isSearching} className="bg-maestro-accent hover:bg-violet-600 text-white px-8 py-4 rounded-xl font-bold flex items-center gap-2">
+                        {isSearching ? <Loader2 className="animate-spin" /> : <Search className="w-5 h-5" />} Search
                     </button>
                 </form>
 
                 {searchResult && (
-                    <div className="bg-maestro-800 p-6 rounded-xl border border-maestro-700">
-                        <div className="prose prose-invert max-w-none mb-6">
-                            <p>{searchResult.text}</p>
+                    <div className="bg-maestro-800 p-8 rounded-2xl border border-maestro-700 shadow-2xl">
+                        <div className="prose prose-invert max-w-none text-slate-300 leading-relaxed text-lg">
+                            {searchResult.text}
                         </div>
-                        
-                        {/* New Phone Number Input Area */}
-                        <div className="mt-6 mb-6 p-4 bg-maestro-900/50 rounded-lg border border-maestro-700 flex flex-col md:flex-row gap-4 items-end md:items-center">
-                            <div className="flex-1 w-full">
-                                <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-2">
-                                    <Phone className="w-3 h-3" /> Found a number? Save it.
-                                </label>
-                                <input 
-                                    type="text" 
-                                    value={phoneInput}
-                                    onChange={(e) => setPhoneInput(e.target.value)}
-                                    placeholder="e.g. +1 555-0199"
-                                    className="w-full bg-maestro-800 border border-maestro-600 rounded p-2 text-white text-sm focus:border-maestro-accent outline-none"
-                                />
-                            </div>
-                            <button 
-                                onClick={handleSavePhone}
-                                disabled={!phoneInput}
-                                className="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2"
-                            >
-                                <Save className="w-4 h-4" /> Save
-                            </button>
-                        </div>
-
                         {searchResult.chunks && searchResult.chunks.length > 0 && (
-                            <div className="border-t border-maestro-700 pt-4">
-                                <h4 className="text-sm font-bold text-slate-400 mb-3 uppercase">Sources</h4>
-                                <ul className="space-y-2">
-                                    {searchResult.chunks.map((chunk, idx) => (
-                                        chunk.web ? (
-                                            <li key={idx}>
-                                                <a href={chunk.web.uri || '#'} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-maestro-accent hover:underline text-sm">
-                                                    <LinkIcon className="w-3 h-3" />
-                                                    {chunk.web.title || 'Source'}
-                                                </a>
-                                            </li>
-                                        ) : null
+                            <div className="mt-8 pt-6 border-t border-maestro-700">
+                                <h4 className="text-xs font-bold text-slate-500 mb-4 uppercase tracking-widest">Grounded Sources</h4>
+                                <div className="flex flex-wrap gap-4">
+                                    {searchResult.chunks.map((chunk, idx) => chunk.web && (
+                                        <a key={idx} href={chunk.web.uri} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-maestro-900 border border-maestro-700 px-4 py-2 rounded-full text-maestro-accent text-xs font-bold hover:bg-maestro-700 transition-colors">
+                                            <LinkIcon className="w-3 h-3" /> {chunk.web.title || 'Source'}
+                                        </a>
                                     ))}
-                                </ul>
+                                </div>
                             </div>
                         )}
                     </div>
                 )}
             </div>
-        ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fadeIn">
-                <div className="space-y-4">
-                    <div className="border-2 border-dashed border-maestro-700 rounded-xl p-8 text-center hover:border-maestro-accent transition-colors cursor-pointer relative bg-maestro-800/50">
+        )}
+
+        {activeTab === 'analyze' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fadeIn">
+                <div className="space-y-6">
+                    <div className="border-2 border-dashed border-maestro-700 rounded-2xl p-10 text-center hover:border-maestro-accent transition-all cursor-pointer bg-maestro-800/50 group">
                         <input type="file" onChange={handleImageUpload} className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" />
                         {selectedImage ? (
-                            <img src={selectedImage} alt="Preview" className="max-h-64 mx-auto rounded-lg shadow-lg" />
+                            <img src={selectedImage} alt="Preview" className="max-h-80 mx-auto rounded-xl shadow-2xl" />
                         ) : (
-                            <div className="py-8">
-                                <Upload className="w-12 h-12 text-slate-500 mx-auto mb-4" />
-                                <p className="text-slate-300 font-medium">Upload Tech Rider / Stage Plot</p>
-                                <p className="text-xs text-slate-500 mt-2">Supports JPG, PNG</p>
+                            <div className="py-10">
+                                <Upload className="w-16 h-16 text-slate-600 mx-auto mb-4 group-hover:text-maestro-accent transition-colors" />
+                                <p className="text-slate-300 font-bold text-lg">Upload Technical Document</p>
+                                <p className="text-sm text-slate-500 mt-2">Stage Plot, Lighting Rider, or Power specs</p>
                             </div>
                         )}
                     </div>
-
-                    <div className="bg-maestro-800 p-4 rounded-lg border border-maestro-700">
-                        <div className="flex items-center justify-between mb-2">
-                             <label className="block text-xs font-bold text-slate-400 uppercase">Extraction Targets</label>
-                             <div className="flex gap-2 text-maestro-accent">
-                                <span title="Power"><Zap className="w-3 h-3" /></span>
-                                <span title="Dimensions"><Ruler className="w-3 h-3" /></span>
-                                <span title="Contacts"><Users className="w-3 h-3" /></span>
-                             </div>
-                        </div>
-                        <textarea 
-                            value={analyzePrompt}
-                            onChange={(e) => setAnalyzePrompt(e.target.value)}
-                            className="w-full bg-maestro-900 border border-maestro-700 p-3 rounded text-sm text-slate-300 h-32 outline-none focus:border-maestro-accent"
-                        />
-                         {selectedImage && (
-                            <button 
-                                onClick={() => handleAnalyze(selectedImage.split(',')[1])}
-                                disabled={isAnalyzing}
-                                className="w-full mt-2 bg-maestro-700 hover:bg-maestro-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center justify-center gap-2"
-                            >
-                                {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                                {isAnalyzing ? 'Extracting Data...' : 'Re-Analyze'}
-                            </button>
-                         )}
+                    <div className="bg-maestro-800 p-6 rounded-2xl border border-maestro-700">
+                        <label className="text-xs font-bold text-slate-500 uppercase block mb-3">AI Instruction</label>
+                        <textarea value={analyzePrompt} onChange={e => setAnalyzePrompt(e.target.value)} className="w-full bg-maestro-900 border border-maestro-700 p-4 rounded-xl text-slate-300 h-32 outline-none focus:border-maestro-accent font-sans" />
+                        <button onClick={handleAnalyze} disabled={isAnalyzing || !selectedImage} className="w-full mt-4 bg-maestro-accent hover:bg-violet-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+                            {isAnalyzing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />}
+                            {isAnalyzing ? 'Analyzing Document...' : 'Extract Data'}
+                        </button>
                     </div>
                 </div>
                 
-                <div className="bg-maestro-800 p-6 rounded-xl border border-maestro-700 min-h-[400px]">
-                    <div className="flex items-center gap-2 mb-4 text-maestro-gold border-b border-maestro-700 pb-2">
-                        <Info className="w-5 h-5" />
-                        <h3 className="font-bold">Extracted Specifications</h3>
-                    </div>
+                <div className="bg-maestro-800 p-8 rounded-2xl border border-maestro-700 min-h-[500px] shadow-2xl">
+                    <h3 className="text-maestro-gold font-bold mb-6 flex items-center gap-3 text-xl border-b border-maestro-700 pb-4">
+                        <Info className="w-6 h-6" /> Extracted Specifications
+                    </h3>
                     {isAnalyzing ? (
-                        <div className="flex flex-col justify-center items-center h-64 space-y-4">
-                            <Loader2 className="w-8 h-8 text-maestro-accent animate-spin" />
-                            <p className="text-sm text-slate-400 animate-pulse">Reading power specs and dimensions...</p>
+                        <div className="flex flex-col justify-center items-center h-[300px] space-y-4">
+                            <Loader2 className="w-12 h-12 text-maestro-accent animate-spin" />
+                            <p className="text-slate-400 font-medium animate-pulse">Scanning stage dimensions and power phases...</p>
                         </div>
                     ) : (
-                        <div className="prose prose-invert prose-sm max-w-none">
-                            {analysisResult ? (
-                                <div className="whitespace-pre-wrap">{analysisResult}</div>
-                            ) : (
-                                <div className="text-center py-20 text-slate-500">
-                                    <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                                    <p className="italic">Upload a document to extract:</p>
-                                    <div className="flex justify-center gap-4 mt-4 text-xs font-bold uppercase opacity-60">
-                                        <span className="flex items-center gap-1"><Zap className="w-3 h-3" /> Power</span>
-                                        <span className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Stage</span>
-                                        <span className="flex items-center gap-1"><Users className="w-3 h-3" /> Contacts</span>
-                                    </div>
-                                </div>
-                            )}
+                        <div className="prose prose-invert prose-lg max-w-none whitespace-pre-wrap text-slate-300">
+                            {analysisResult || "No data extracted yet. Upload a plot to begin."}
                         </div>
                     )}
                 </div>
+            </div>
+        )}
+
+        {activeTab === 'directory' && (
+            <div className="bg-maestro-800 rounded-2xl border border-maestro-700 shadow-2xl overflow-hidden animate-fadeIn">
+                <div className="p-6 border-b border-maestro-700 bg-maestro-900 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h3 className="text-xl font-bold text-white flex items-center gap-2"><Users className="w-6 h-6 text-maestro-accent" /> Venue Contact Directory</h3>
+                        <p className="text-sm text-slate-500">Manage direct lines for Production Managers and Box Office.</p>
+                    </div>
+                    <select value={selectedDateId} onChange={e => setSelectedDateId(e.target.value)} className="bg-maestro-800 border border-maestro-700 text-white rounded-lg px-4 py-2 text-sm outline-none font-bold">
+                        {tourDates.map(d => <option key={d.id} value={d.id}>{d.date} - {d.venue} ({d.city})</option>)}
+                    </select>
+                </div>
+
+                {activeDate ? (
+                    <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><User className="w-3 h-3" /> PM Name</label>
+                            <input type="text" value={activeDate.venueContactName || ''} onChange={e => handleUpdateContact('venueContactName', e.target.value)} className="w-full bg-maestro-900 border border-maestro-700 rounded-xl p-4 text-white outline-none focus:border-maestro-accent" placeholder="Contact Name" />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Phone className="w-3 h-3" /> Direct Phone</label>
+                            <input type="text" value={activeDate.venueContactPhone || ''} onChange={e => handleUpdateContact('venueContactPhone', e.target.value)} className="w-full bg-maestro-900 border border-maestro-700 rounded-xl p-4 text-white outline-none focus:border-maestro-accent font-mono" placeholder="+1 555-0199" />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Mail className="w-3 h-3" /> Contact Email</label>
+                            <input type="email" value={activeDate.venueContactEmail || ''} onChange={e => handleUpdateContact('venueContactEmail', e.target.value)} className="w-full bg-maestro-900 border border-maestro-700 rounded-xl p-4 text-white outline-none focus:border-maestro-accent" placeholder="pm@venue.com" />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Building className="w-3 h-3" /> Venue Main Line</label>
+                            <input type="text" value={activeDate.venuePhone || ''} onChange={e => handleUpdateContact('venuePhone', e.target.value)} className="w-full bg-maestro-900 border border-maestro-700 rounded-xl p-4 text-white outline-none focus:border-maestro-accent font-mono" placeholder="Main Box Office" />
+                        </div>
+                        <div className="space-y-2 lg:col-span-2">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><MapPin className="w-3 h-3" /> Venue Address</label>
+                            <input type="text" value={activeDate.address || ''} onChange={e => handleUpdateContact('address', e.target.value)} className="w-full bg-maestro-900 border border-maestro-700 rounded-xl p-4 text-white outline-none focus:border-maestro-accent" />
+                        </div>
+                        <div className="col-span-full pt-6 flex justify-end">
+                            <button onClick={() => alert("Contacts Updated.")} className="bg-green-600 hover:bg-green-500 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-xl transition-all">
+                                <Save className="w-5 h-5" /> Save Directory Changes
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="p-20 text-center text-slate-500 italic">No venue selected.</div>
+                )}
             </div>
         )}
     </div>

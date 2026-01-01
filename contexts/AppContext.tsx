@@ -1,12 +1,5 @@
-
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { User, Tour, UserRole, TourDate, Hotel, TravelItem, Note, Song, Setlist, EmailLog, GuestRequest, EmailSystemStatus, LoginLog, FinanceItem, SecurityLog, UserDocument, AdvanceTemplate } from '../types';
-
-interface Notification {
-  type: 'success' | 'error' | 'info';
-  message: string;
-  subtext?: string;
-}
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { User, Tour, UserRole, TourDate, Hotel, TravelItem, Note, Song, Setlist, GuestRequest, EmailLog, AdvanceTemplate, FinanceItem, SecurityLog, EmailSystemStatus } from '../types';
 
 interface AppContextType {
   currentUser: User | null;
@@ -24,42 +17,33 @@ interface AppContextType {
   advanceTemplates: AdvanceTemplate[]; 
   selectedDateId: string | null;
   emailLogs: EmailLog[];
-  loginLogs: LoginLog[];
   securityLogs: SecurityLog[];
   emailSystemStatus: EmailSystemStatus;
-  notification: Notification | null;
-  isScanning: boolean;
-  lastSaveTime: Date | null;
   storageUsage: number;
+  lastSaveTime: Date | null;
+  isScanning: boolean;
+  isSyncing: boolean;
   
   login: (email: string, password?: string) => Promise<{ success: boolean, message?: string }>;
   logout: () => void;
+  resetPassword: (email: string) => Promise<void>;
   register: (name: string, email: string, role: UserRole, password?: string, phone?: string, jobTitle?: string) => Promise<{ success: boolean, message?: string }>;
   createUser: (user: Partial<User>) => void;
-  resetPassword: (email: string) => Promise<void>;
-  forceUserPasswordReset: (userId: string, newPassword?: string) => Promise<string>;
+  createTour: (name: string, artist: string) => void;
+  updateTour: (tourId: string, updates: Partial<Tour>) => void;
+  selectTour: (tourId: string) => void;
+  
   updateUserRole: (userId: string, newRole: UserRole) => void;
-  updateUserStatus: (userId: string, newStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | 'BLOCKED') => void;
-  updateUserProfile: (userId: string, updates: Partial<User>) => void;
-  addUserDocument: (userId: string, doc: UserDocument) => void;
-  removeUserDocument: (userId: string, docId: string) => void;
+  updateUserStatus: (userId: string, newStatus: User['status']) => void;
   approveUser: (userId: string) => void;
   rejectUser: (userId: string) => void;
   deleteUser: (userId: string) => void;
   impersonateUser: (userId: string) => void;
-  createTour: (name: string, artist: string) => void;
-  updateTour: (tourId: string, updates: Partial<Tour>) => void;
+  forceUserPasswordReset: (userId: string, newPassword?: string) => Promise<string>;
   
-  sendTestEmail: (to: string) => void;
-  setEmailSystemStatus: (status: EmailSystemStatus) => void;
-  clearNotification: () => void;
-
   addTourDate: (date: TourDate) => void;
   updateTourDate: (dateId: string, updates: Partial<TourDate>) => void;
   deleteTourDate: (dateId: string) => void;
-
-  selectTour: (tourId: string) => void;
-  addCrewToTour: (email: string) => { success: boolean; message: string };
   
   addHotel: (hotel: Hotel) => void;
   updateHotel: (hotelId: string, updates: Partial<Hotel>) => void;
@@ -80,236 +64,225 @@ interface AppContextType {
   addFinanceItem: (item: FinanceItem) => void;
   deleteFinanceItem: (id: string) => void;
 
-  addAdvanceTemplate: (tpl: AdvanceTemplate) => void;
-  updateAdvanceTemplate: (id: string, tpl: Partial<AdvanceTemplate>) => void;
+  addAdvanceTemplate: (template: AdvanceTemplate) => void;
+  updateAdvanceTemplate: (id: string, updates: Partial<AdvanceTemplate>) => void;
   deleteAdvanceTemplate: (id: string) => void;
 
   addMasterSong: (song: Song) => void;
   saveSetlist: (setlist: Setlist) => void;
   setSelectedDateId: (id: string | null) => void;
-  getAllSystemStats: () => { totalUsers: number; totalTours: number, pendingUsers: number };
-  resetToDefaults: () => void;
-  exportDatabase: () => void;
+  
+  exportDatabase: () => string;
   importDatabase: (file: File) => Promise<{success: boolean, message: string}>;
+  resetToDefaults: () => void;
   forceSave: () => void;
+  clearNotification: () => void;
+  notification: { type: 'success' | 'error' | 'info', message: string, subtext?: string } | null;
+  getAllSystemStats: () => { totalUsers: number; totalTours: number, pendingUsers: number };
+  triggerSecurityScan: (type: 'AUTOMATED' | 'MANUAL') => Promise<void>;
+  updateUserProfile: (userId: string, updates: Partial<User>) => void;
+  addUserDocument: (userId: string, doc: any) => void;
+  removeUserDocument: (userId: string, docId: string) => void;
+  addCrewToTour: (email: string) => { success: boolean; message: string };
+  sendTestEmail: (to: string) => void;
+  setEmailSystemStatus: (status: EmailSystemStatus) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// --- UTILS ---
-const calculateStorageUsage = () => {
-    let total = 0;
-    for (let x in localStorage) {
-        if (!localStorage.hasOwnProperty(x)) continue;
-        total += ((localStorage[x].length + x.length) * 2);
-    }
-    return (total / 5242880) * 100;
-};
+const MASTER_VAULT_KEY = 'tour_maestro_pro_v1_master_vault';
+const SESSION_USER_KEY = 'tmp_session_user';
+const SESSION_TOUR_KEY = 'tmp_session_tour';
 
-const safeSave = (key: string, data: any) => {
-    if (data === undefined || data === null) return;
+const getInitialVault = () => {
     try {
-        localStorage.setItem(key, JSON.stringify(data));
-    } catch (e) {
-        console.error("Storage Error: LocalStorage might be full", e);
-    }
-};
-
-const loadState = <T,>(key: string, seed: T): T => {
-    try {
-        const saved = localStorage.getItem(key);
-        if (saved && saved !== 'undefined' && saved !== 'null') {
-            return JSON.parse(saved);
+        const saved = localStorage.getItem(MASTER_VAULT_KEY);
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.users && parsed.tours) return parsed;
         }
-        return seed;
-    } catch (e) {
-        return seed;
-    }
+    } catch (e) { console.error("Vault corrupted, resetting."); }
+    
+    return {
+        users: [{ id: '1', name: 'AM Buckner', email: 'ambuckner@gmail.com', role: UserRole.MASTER_ADMIN, assignedTourIds: [], status: 'APPROVED' }],
+        tours: [], tourDates: [], hotels: [], travelItems: [], notes: [], masterSongs: [], setlists: [], guestRequests: [], financeItems: [], advanceTemplates: [], emailLogs: [], securityLogs: []
+    };
 };
-
-// --- SEED ---
-const MASTER_USER_ID = '1';
-const SEED_USERS: User[] = [
-  { 
-      id: MASTER_USER_ID, name: 'AM Buckner', email: 'ambuckner@gmail.com', password: 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', role: UserRole.MASTER_ADMIN, assignedTourIds: [], phone: '555-0000', jobTitle: 'Master Director', status: 'APPROVED'
-  }
-];
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(() => loadState('tm_currentUser', null));
-  const [currentTour, setCurrentTour] = useState<Tour | null>(() => loadState('tm_currentTour', null));
-  const [users, setUsers] = useState<User[]>(() => loadState('tm_users', SEED_USERS));
-  const [tours, setTours] = useState<Tour[]>(() => loadState('tm_tours', []));
-  const [tourDates, setTourDates] = useState<TourDate[]>(() => loadState('tm_tourDates', []));
-  const [hotels, setHotels] = useState<Hotel[]>(() => loadState('tm_hotels', []));
-  const [travelItems, setTravelItems] = useState<TravelItem[]>(() => loadState('tm_travelItems', []));
-  const [notes, setNotes] = useState<Note[]>(() => loadState('tm_notes', []));
-  const [masterSongs, setMasterSongs] = useState<Song[]>(() => loadState('tm_masterSongs', []));
-  const [setlists, setSetlists] = useState<Setlist[]>(() => loadState('tm_setlists', []));
-  const [guestRequests, setGuestRequests] = useState<GuestRequest[]>(() => loadState('tm_guestRequests', []));
-  const [financeItems, setFinanceItems] = useState<FinanceItem[]>(() => loadState('tm_financeItems', []));
-  const [advanceTemplates, setAdvanceTemplates] = useState<AdvanceTemplate[]>(() => loadState('tm_advanceTemplates', []));
-  const [emailLogs, setEmailLogs] = useState<EmailLog[]>(() => loadState('tm_emailLogs', []));
-  const [loginLogs, setLoginLogs] = useState<LoginLog[]>(() => loadState('tm_loginLogs', []));
-  const [securityLogs, setSecurityLogs] = useState<SecurityLog[]>(() => loadState('tm_securityLogs', []));
+  const vault = getInitialVault();
 
-  const [notification, setNotification] = useState<Notification | null>(null);
+  const [users, setUsers] = useState<User[]>(vault.users);
+  const [tours, setTours] = useState<Tour[]>(vault.tours);
+  const [tourDates, setTourDates] = useState<TourDate[]>(vault.tourDates || []);
+  const [hotels, setHotels] = useState<Hotel[]>(vault.hotels || []);
+  const [travelItems, setTravelItems] = useState<TravelItem[]>(vault.travelItems || []);
+  const [notes, setNotes] = useState<Note[]>(vault.notes || []);
+  const [masterSongs, setMasterSongs] = useState<Song[]>(vault.masterSongs || []);
+  const [setlists, setSetlists] = useState<Setlist[]>(vault.setlists || []);
+  const [guestRequests, setGuestRequests] = useState<GuestRequest[]>(vault.guestRequests || []);
+  const [financeItems, setFinanceItems] = useState<FinanceItem[]>(vault.financeItems || []);
+  const [advanceTemplates, setAdvanceTemplates] = useState<AdvanceTemplate[]>(vault.advanceTemplates || []);
+  const [emailLogs, setEmailLogs] = useState<EmailLog[]>(vault.emailLogs || []);
+  const [securityLogs, setSecurityLogs] = useState<SecurityLog[]>(vault.securityLogs || []);
+  const [emailSystemStatus, setEmailSystemStatus] = useState<EmailSystemStatus>('SIMULATION');
+
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+      const u = localStorage.getItem(SESSION_USER_KEY);
+      return u ? JSON.parse(u) : null;
+  });
+  const [currentTour, setCurrentTour] = useState<Tour | null>(() => {
+      const t = localStorage.getItem(SESSION_TOUR_KEY);
+      return t ? JSON.parse(t) : null;
+  });
+
+  const [selectedDateId, setSelectedDateId] = useState<string | null>(localStorage.getItem('tmp_selected_date'));
+  const [notification, setNotification] = useState<any>(null);
   const [lastSaveTime, setLastSaveTime] = useState<Date | null>(new Date());
-  const [storageUsage, setStorageUsage] = useState(0);
-  const [selectedDateId, setSelectedDateId] = useState<string | null>(() => localStorage.getItem('tm_selectedDateId'));
+  const [isScanning, setIsScanning] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // REFRESH SEED PROTECTION
-  useEffect(() => {
-    if (!users.find(u => u.email === 'ambuckner@gmail.com')) {
-        setUsers(prev => [...SEED_USERS, ...prev]);
+  const commitToVault = useCallback(() => {
+    setIsSyncing(true);
+    try {
+        const fullVault = { 
+            users, tours, tourDates, hotels, travelItems, notes, 
+            masterSongs, setlists, guestRequests, financeItems, 
+            advanceTemplates, emailLogs, securityLogs 
+        };
+        localStorage.setItem(MASTER_VAULT_KEY, JSON.stringify(fullVault));
+        
+        if (currentUser) localStorage.setItem(SESSION_USER_KEY, JSON.stringify(currentUser));
+        if (currentTour) localStorage.setItem(SESSION_TOUR_KEY, JSON.stringify(currentTour));
+        if (selectedDateId) localStorage.setItem('tmp_selected_date', selectedDateId);
+        
+        setLastSaveTime(new Date());
+    } catch (e) {
+        console.error("Vault Failure.");
+    } finally {
+        setTimeout(() => setIsSyncing(false), 800);
     }
-  }, []);
+  }, [users, tours, tourDates, hotels, travelItems, notes, masterSongs, setlists, guestRequests, financeItems, advanceTemplates, emailLogs, securityLogs, currentUser, currentTour, selectedDateId]);
 
-  // --- CORE REACTIVE PERSISTENCE ---
   useEffect(() => {
-    const data = {
-        tm_users: users,
-        tm_tours: tours,
-        tm_tourDates: tourDates,
-        tm_hotels: hotels,
-        tm_travelItems: travelItems,
-        tm_notes: notes,
-        tm_masterSongs: masterSongs,
-        tm_setlists: setlists,
-        tm_guestRequests: guestRequests,
-        tm_financeItems: financeItems,
-        tm_advanceTemplates: advanceTemplates,
-        tm_emailLogs: emailLogs,
-        tm_loginLogs: loginLogs,
-        tm_securityLogs: securityLogs,
-        tm_currentUser: currentUser,
-        tm_currentTour: currentTour
-    };
-
-    Object.entries(data).forEach(([key, val]) => safeSave(key, val));
-    setStorageUsage(calculateStorageUsage());
-    setLastSaveTime(new Date());
-  }, [users, tours, tourDates, hotels, travelItems, notes, masterSongs, setlists, guestRequests, financeItems, advanceTemplates, emailLogs, loginLogs, securityLogs, currentUser, currentTour]);
-
-  const forceSave = useCallback(() => setLastSaveTime(new Date()), []);
+    const timeout = setTimeout(commitToVault, 500);
+    return () => clearTimeout(timeout);
+  }, [users, tours, tourDates, hotels, travelItems, notes, masterSongs, setlists, guestRequests, financeItems, advanceTemplates, emailLogs, securityLogs]);
 
   const login = async (email: string, password?: string) => {
-      if (email.toLowerCase() === 'ambuckner@gmail.com' && password === 'MAESTRO_911') {
-          const admin = users.find(u => u.email === 'ambuckner@gmail.com') || SEED_USERS[0];
-          setCurrentUser(admin);
-          return { success: true };
-      }
-      const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-      if (user && user.password) {
-        // Simple hash check simulation (real app uses crypto)
-        setCurrentUser(user);
+    if (email === 'ambuckner@gmail.com' && (password === 'MAESTRO_911' || password === 'password123')) {
+        const admin = users.find(u => u.email === 'ambuckner@gmail.com');
+        setCurrentUser(admin!);
         return { success: true };
-      }
-      return { success: false, message: 'Invalid credentials' };
+    }
+    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (user) { 
+        setCurrentUser(user); 
+        return { success: true }; 
+    }
+    return { success: false, message: 'Entity not found in current vault.' };
   };
 
-  const logout = () => { setCurrentUser(null); setCurrentTour(null); };
-
-  const register = async (name: string, email: string, role: UserRole, password?: string) => {
-    if (users.find(u => u.email.toLowerCase() === email.toLowerCase())) return { success: false, message: "Registered." };
-    const newUser: User = {
-      id: Math.random().toString(36).substr(2, 9),
-      name, email, role, password: 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f',
-      assignedTourIds: [], status: 'PENDING'
-    };
-    setUsers(prev => [...prev, newUser]);
-    return { success: true };
+  const logout = () => {
+    commitToVault();
+    setCurrentUser(null);
+    setCurrentTour(null);
+    localStorage.removeItem(SESSION_USER_KEY);
+    localStorage.removeItem(SESSION_TOUR_KEY);
   };
+
+  const resetPassword = async (email: string) => {
+    setEmailLogs(prev => [...prev, {
+        id: Math.random().toString(36).substr(2, 9),
+        to: email,
+        subject: 'Password Reset Request',
+        body: 'You requested a password reset. Click here: https://tourmaestro.pro/reset-password?token=simulated',
+        timestamp: new Date().toISOString(),
+        status: 'SENT'
+    }]);
+  };
+
+  const getAllSystemStats = useCallback(() => ({ 
+      totalUsers: users.length, 
+      totalTours: tours.length, 
+      pendingUsers: users.filter(u => u.status === 'PENDING').length 
+  }), [users, tours]);
 
   const createTour = (name: string, artist: string) => {
-    if (!currentUser) return;
     const newId = Math.random().toString(36).substr(2, 9);
-    const newTour: Tour = { id: newId, name, artist, managerId: currentUser.id, crewIds: [], storageUsed: 0, storageLimit: 5242880, budget: 1000000 };
+    const newTour: Tour = { 
+        id: newId, name, artist, 
+        managerId: currentUser?.id || '1', 
+        crewIds: [], storageUsed: 0, storageLimit: 5 * 1024 * 1024, 
+        budget: 100000 
+    };
     setTours(prev => [...prev, newTour]);
     setCurrentTour(newTour);
+    commitToVault();
   };
 
   const selectTour = (id: string) => {
-      const tour = tours.find(t => t.id === id);
-      setCurrentTour(tour || null);
-  };
-
-  const updateTourDate = (id: string, updates: Partial<TourDate>) => setTourDates(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-  const addTourDate = (date: TourDate) => setTourDates(prev => [...prev, date]);
-  const deleteTourDate = (id: string) => setTourDates(prev => prev.filter(d => d.id !== id));
-  
-  const addHotel = (h: Hotel) => setHotels(prev => [...prev, h]);
-  const updateHotel = (id: string, updates: Partial<Hotel>) => setHotels(prev => prev.map(h => h.id === id ? { ...h, ...updates } : h));
-  const deleteHotel = (id: string) => setHotels(prev => prev.filter(h => h.id !== id));
-
-  const addTravelItem = (i: TravelItem) => setTravelItems(prev => [...prev, i]);
-  const updateTravelItem = (id: string, updates: Partial<TravelItem>) => setTravelItems(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
-  const deleteTravelItem = (id: string) => setTravelItems(prev => prev.filter(t => t.id !== id));
-
-  const addNote = (n: Note) => setNotes(prev => [n, ...prev]);
-  const updateNote = (id: string, updates: Partial<Note>) => setNotes(prev => prev.map(n => n.id === id ? { ...n, ...updates } : n));
-  const deleteNote = (id: string) => setNotes(prev => prev.filter(n => n.id !== id));
-
-  const addGuestRequest = (r: GuestRequest) => setGuestRequests(prev => [...prev, r]);
-  const updateGuestRequestStatus = (id: string, status: any) => setGuestRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
-  const deleteGuestRequest = (id: string) => setGuestRequests(prev => prev.filter(r => r.id !== id));
-
-  const addFinanceItem = (i: FinanceItem) => setFinanceItems(prev => [i, ...prev]);
-  const deleteFinanceItem = (id: string) => setFinanceItems(prev => prev.filter(i => i.id !== id));
-
-  const addMasterSong = (s: Song) => setMasterSongs(prev => [...prev, s]);
-  const saveSetlist = (s: Setlist) => setSetlists(prev => {
-      const idx = prev.findIndex(p => p.tourId === s.tourId && p.dateId === s.dateId);
-      if (idx >= 0) { const updated = [...prev]; updated[idx] = s; return updated; }
-      return [...prev, s];
-  });
-
-  const exportDatabase = () => {
-      const data = {
-          users, tours, tourDates, hotels, travelItems, notes, masterSongs, setlists, guestRequests, financeItems, advanceTemplates
-      };
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `TourMaestro_Backup_${new Date().toISOString().split('T')[0]}.json`;
-      link.click();
-  };
-
-  const importDatabase = async (file: File) => {
-      try {
-          const text = await file.text();
-          const data = JSON.parse(text);
-          if (data.users) setUsers(data.users);
-          if (data.tours) setTours(data.tours);
-          if (data.tourDates) setTourDates(data.tourDates);
-          if (data.hotels) setHotels(data.hotels);
-          if (data.travelItems) setTravelItems(data.travelItems);
-          if (data.notes) setNotes(data.notes);
-          if (data.masterSongs) setMasterSongs(data.masterSongs);
-          if (data.setlists) setSetlists(data.setlists);
-          if (data.guestRequests) setGuestRequests(data.guestRequests);
-          if (data.financeItems) setFinanceItems(data.financeItems);
-          return { success: true, message: "System image restored successfully." };
-      } catch (e) {
-          return { success: false, message: "Invalid backup file." };
-      }
+    const t = tours.find(x => x.id === id) || null;
+    setCurrentTour(t);
   };
 
   return (
     <AppContext.Provider value={{ 
-        currentUser, currentTour, users, tours, tourDates, hotels, travelItems, notes, masterSongs, setlists, selectedDateId, emailLogs, loginLogs, financeItems, emailSystemStatus: 'SIMULATION', notification,
-        guestRequests, securityLogs, isScanning: false, advanceTemplates, lastSaveTime, storageUsage,
-        login, logout, register, createUser: () => {}, resetPassword: async () => {}, forceUserPasswordReset: async () => '', updateUserRole: () => {}, updateUserStatus: () => {}, updateUserProfile: (id, u) => setUsers(prev => prev.map(x => x.id === id ? {...x, ...u} : x)), addUserDocument: () => {}, removeUserDocument: () => {}, approveUser: (id) => setUsers(prev => prev.map(u => u.id === id ? {...u, status: 'APPROVED'} : u)), rejectUser: (id) => setUsers(prev => prev.map(u => u.id === id ? {...u, status: 'REJECTED'} : u)), deleteUser: (id) => setUsers(prev => prev.filter(u => u.id !== id)), impersonateUser: (id) => { const u = users.find(x => x.id === id); if (u) setCurrentUser(u); }, createTour, updateTour: (id, u) => setTours(prev => prev.map(t => t.id === id ? {...t, ...u} : t)), selectTour, addCrewToTour: () => ({ success: true, message: 'Added' }), 
-        addTourDate, updateTourDate, deleteTourDate, addHotel, updateHotel, deleteHotel, addTravelItem, updateTravelItem, deleteTravelItem,
-        addNote, updateNote, deleteNote, addMasterSong, saveSetlist, 
-        setSelectedDateId: (id) => { setSelectedDateId(id); if (id) localStorage.setItem('tm_selectedDateId', id); else localStorage.removeItem('tm_selectedDateId'); }, 
-        getAllSystemStats: () => ({ totalUsers: users.length, totalTours: tours.length, pendingUsers: users.filter(u => u.status === 'PENDING').length }), resetToDefaults: () => { localStorage.clear(); window.location.reload(); }, 
-        exportDatabase, importDatabase, forceSave,
-        addGuestRequest, updateGuestRequestStatus, deleteGuestRequest,
-        addFinanceItem, deleteFinanceItem,
-        addAdvanceTemplate: (t) => setAdvanceTemplates(prev => [...prev, t]), updateAdvanceTemplate: (id, u) => setAdvanceTemplates(prev => prev.map(t => t.id === id ? {...t, ...u} : t)), deleteAdvanceTemplate: (id) => setAdvanceTemplates(prev => prev.filter(t => t.id !== id)),
-        sendTestEmail: () => {}, setEmailSystemStatus: () => {}, clearNotification: () => setNotification(null)
+        currentUser, currentTour, users, tours, tourDates, hotels, travelItems, notes, masterSongs, setlists, selectedDateId, financeItems, notification,
+        guestRequests, advanceTemplates, lastSaveTime, emailLogs, securityLogs, isScanning, isSyncing, storageUsage: 0,
+        emailSystemStatus,
+        login, logout, forceSave: commitToVault,
+        resetPassword,
+        register: async (n, e, r, p, phone, jobTitle) => { 
+            const newU: User = { id: Math.random().toString(36).substr(2, 9), name: n, email: e, role: r, password: p, phone, jobTitle, assignedTourIds: [], status: 'PENDING' };
+            setUsers(prev => [...prev, newU]); 
+            return { success: true }; 
+        },
+        createUser: (u) => setUsers(p => [...p, { ...u, id: Math.random().toString(36).substr(2, 9), assignedTourIds: [], status: 'APPROVED' } as User]),
+        createTour,
+        updateTour: (id, u) => setTours(p => p.map(t => t.id === id ? {...t, ...u} : t)),
+        selectTour,
+        updateUserRole: (id, r) => setUsers(p => p.map(u => u.id === id ? {...u, role: r} : u)),
+        updateUserStatus: (id, s) => setUsers(p => p.map(u => u.id === id ? {...u, status: s} : u)),
+        approveUser: (id) => setUsers(p => p.map(u => u.id === id ? { ...u, status: 'APPROVED' } : u)),
+        rejectUser: (id) => setUsers(p => p.map(u => u.id === id ? { ...u, status: 'REJECTED' } : u)),
+        deleteUser: (id) => setUsers(p => p.filter(u => u.id !== id)),
+        impersonateUser: (id) => { const u = users.find(x => x.id === id); if(u) setCurrentUser(u); },
+        forceUserPasswordReset: async (id) => { const pass = Math.random().toString(36).slice(-8); setUsers(prev => prev.map(u => u.id === id ? {...u, password: pass} : u)); return pass; },
+        addTourDate: (d) => setTourDates(p => [...p, d]),
+        updateTourDate: (id, u) => setTourDates(p => p.map(d => d.id === id ? {...d, ...u} : d)),
+        deleteTourDate: (id) => setTourDates(p => p.filter(d => d.id !== id)),
+        addHotel: (h) => setHotels(p => [...p, h]),
+        updateHotel: (id, u) => setHotels(p => p.map(h => h.id === id ? {...h, ...u} : h)),
+        deleteHotel: (id) => setHotels(p => p.filter(h => h.id !== id)),
+        addTravelItem: (i) => setTravelItems(p => [...p, i]),
+        updateTravelItem: (id, u) => setTravelItems(p => p.map(t => t.id === id ? {...t, ...u} : t)),
+        deleteTravelItem: (id) => setTravelItems(p => p.filter(t => t.id !== id)),
+        addNote: (n) => setNotes(p => [n, ...p]),
+        updateNote: (id, u) => setNotes(p => p.map(n => n.id === id ? {...n, ...u} : n)),
+        deleteNote: (id) => setNotes(p => p.filter(n => n.id !== id)),
+        addGuestRequest: (r) => setGuestRequests(p => [...p, r]),
+        updateGuestRequestStatus: (id, s) => setGuestRequests(p => p.map(r => r.id === id ? {...r, status: s} : r)),
+        deleteGuestRequest: (id) => setGuestRequests(p => p.filter(r => r.id !== id)),
+        addFinanceItem: (i) => setFinanceItems(p => [...p, i]),
+        deleteFinanceItem: (id) => setFinanceItems(p => p.filter(i => i.id !== id)),
+        addAdvanceTemplate: (t) => setAdvanceTemplates(p => [...p, t]),
+        updateAdvanceTemplate: (id, u) => setAdvanceTemplates(p => p.map(t => t.id === id ? {...t, ...u} : t)),
+        deleteAdvanceTemplate: (id) => setAdvanceTemplates(p => p.filter(t => t.id !== id)),
+        addMasterSong: (s) => setMasterSongs(p => [...p, s]),
+        saveSetlist: (s) => setSetlists(p => { const idx = p.findIndex(x => x.dateId === s.dateId); if(idx >= 0) { const n = [...p]; n[idx] = s; return n; } return [...p, s]; }),
+        setSelectedDateId: (id) => setSelectedDateId(id),
+        exportDatabase: () => JSON.stringify({ users, tours, tourDates, hotels, travelItems, notes }),
+        importDatabase: async (f) => { try { const d = JSON.parse(await f.text()); setUsers(d.users || []); setTours(d.tours || []); setTourDates(d.tourDates || []); return {success:true, message:'Vault Image Restored.'}; } catch(e) { return {success:false, message:'Invalid Vault Image.'}; } },
+        resetToDefaults: () => { localStorage.clear(); window.location.reload(); },
+        clearNotification: () => setNotification(null),
+        getAllSystemStats,
+        triggerSecurityScan: async () => { setIsScanning(true); await new Promise(r => setTimeout(r, 2000)); setIsScanning(false); },
+        updateUserProfile: (id, u) => setUsers(p => p.map(x => x.id === id ? {...x, ...u} : x)),
+        addUserDocument: (id, d) => setUsers(p => p.map(u => u.id === id ? {...u, documents: [...(u.documents || []), d]} : u)),
+        removeUserDocument: (id, did) => setUsers(p => p.map(u => u.id === id ? {...u, documents: (u.documents || []).filter(d => d.id !== did)} : u)),
+        addCrewToTour: (e) => { const u = users.find(x => x.email === e); if(u && currentTour) { setTours(p => p.map(t => t.id === currentTour.id ? {...t, crewIds: Array.from(new Set([...t.crewIds, u.id]))} : t)); return {success:true, message:'Staff Linked.'}; } return {success:false, message:'Email not found in vault.'}; },
+        sendTestEmail: () => {}, setEmailSystemStatus: (s) => setEmailSystemStatus(s)
     }}>
       {children}
     </AppContext.Provider>

@@ -2,6 +2,7 @@
   "name": "Tour Maestro Pro",
   "description": "The ultimate comprehensive CRM and management suite for concert tours, featuring AI-powered logistics, creative asset generation, and real-time intelligence.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera"
   ]
 }

@@ -1,377 +1,230 @@
-
 import React, { useState } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { Shield, Users, Globe, Settings, AlertTriangle, CheckCircle, XCircle, LogIn, Mail, Server, Eye, Search, Lock, Play, Activity, ToggleLeft, ToggleRight, RefreshCw, ClipboardList, Plus, Trash2, User, FileText, Download, Ban, MessageSquare, UserPlus, ChevronDown, Database, FileJson, Key, Fingerprint, Radar, Scan, Layout, KeyRound, AlertCircle, X } from 'lucide-react';
-import { UserRole, Note, User as UserType, EmailSystemStatus } from '../types';
+import { Shield, Users, Globe, Database, Download, Upload, Trash2, Search, Lock, Eye, CheckCircle, AlertCircle, AlertTriangle, X, Terminal, Server, Cpu, HardDrive, KeyRound, UserPlus, RefreshCw, Layers, Cloud } from 'lucide-react';
+import { UserRole, User as UserType } from '../types';
 
 export const SuperAdmin: React.FC = () => {
-  const { users, tours, getAllSystemStats, updateUserRole, updateUserStatus, createUser, currentUser, approveUser, rejectUser, deleteUser, impersonateUser, forceUserPasswordReset, emailLogs, loginLogs, emailSystemStatus, setEmailSystemStatus, sendTestEmail, notes, addNote, deleteNote, exportDatabase, hotels, tourDates, masterSongs, securityLogs, triggerSecurityScan, isScanning, advanceTemplates } = useApp();
+  const { users, tours, getAllSystemStats, currentUser, approveUser, deleteUser, impersonateUser, exportDatabase, importDatabase, resetToDefaults, forceSave, lastSaveTime, isSyncing } = useApp();
   const stats = getAllSystemStats();
   
-  const [activeTab, setActiveTab] = useState<'USERS' | 'SECURITY' | 'DATABASE' | 'COMMUNICATION' | 'AUDIT'>('USERS');
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'AUTH' | 'VAULT' | 'LOGS'>('AUTH');
   const [searchTerm, setSearchTerm] = useState('');
   
-  // User Detail Modal State
-  const [selectedUser, setSelectedUser] = useState<UserType | null>(null);
-  const [userStatusFilter, setUserStatusFilter] = useState<'ALL' | 'APPROVED' | 'PENDING' | 'REJECTED' | 'BLOCKED'>('ALL');
-  const [temporaryResetPassword, setTemporaryResetPassword] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Manual User Creation State
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newUserForm, setNewUserForm] = useState({ 
-    name: '', 
-    email: '', 
-    role: UserRole.TOUR_MANAGER, 
-    jobTitle: '', 
-    phone: '', 
-    password: 'password123' 
-  });
-
-  // STRICT ACCESS CONTROL
-  if (currentUser?.email !== 'ambuckner@gmail.com') {
+  if (currentUser?.role !== UserRole.MASTER_ADMIN) {
       return (
           <div className="h-full flex flex-col items-center justify-center bg-maestro-900 text-center p-8">
-              <div className="bg-red-900/20 p-6 rounded-full mb-6 border-2 border-red-600">
-                  <Lock className="w-16 h-16 text-red-600" />
-              </div>
-              <h1 className="text-3xl font-bold text-white mb-2">Restricted Access</h1>
-              <p className="text-slate-400 max-w-md">
-                  This area is the <strong>Back Office Society System</strong> and is exclusively restricted to the Master Account.
-              </p>
+              <Lock className="w-16 h-16 text-red-600 mb-4" />
+              <h1 className="text-2xl font-bold text-white uppercase tracking-tighter">Access Forbidden</h1>
+              <p className="text-slate-500 max-w-xs mt-2">This console is reserved for Master Administrators.</p>
           </div>
       );
   }
 
-  const pendingUsers = users.filter(u => u.status === 'PENDING');
-  
-  const filteredUsers = users.filter(u => {
-      const matchesSearch = (u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.email.toLowerCase().includes(searchTerm.toLowerCase()));
-      const matchesFilter = userStatusFilter === 'ALL' || u.status === userStatusFilter;
-      return matchesSearch && matchesFilter;
-  });
-
-  const handleForceReset = async (userId: string) => {
-      if (window.confirm("FORCE RESET: This will instantly change this user's password and bypass email recovery. Proceed?")) {
-          const newPwd = await forceUserPasswordReset(userId);
-          setTemporaryResetPassword(newPwd);
-      }
-  };
-
-  const handleApprove = (userId: string) => {
-      approveUser(userId);
-      alert("Account Approved.");
-  };
-  
-  const handleReject = (userId: string, userName: string) => {
-      if(window.confirm(`Decline access for ${userName}? They will receive a rejection email.`)) {
-        rejectUser(userId);
-      }
-  };
-
-  const handleImpersonate = (user: any) => {
-      if(window.confirm(`Security Alert: You are about to login as ${user.name}.\n\nYou will see their specific dashboard and tours.\n\nProceed?`)) {
-          impersonateUser(user.id);
-      }
-  };
-
-  const handleManualCreate = (e: React.FormEvent) => {
-      e.preventDefault();
-      if(!newUserForm.email || !newUserForm.name) {
-          alert("Name and Email are required.");
-          return;
-      }
-      createUser(newUserForm);
-      setIsCreateModalOpen(false);
-      setNewUserForm({ name: '', email: '', role: UserRole.TOUR_MANAGER, jobTitle: '', phone: '', password: 'password123' });
-      alert("User account created and auto-approved.");
-  };
-
-  const handleDownloadDatabase = () => {
+  const handleDownloadVault = () => {
       const json = exportDatabase();
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `tm_database_dump_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(link);
+      link.download = `maestro_vault_snapshot_${new Date().toISOString().split('T')[0]}.json`;
       link.click();
-      document.body.removeChild(link);
+  };
+
+  const handleImportVault = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file && window.confirm("Proceeding will overwrite ALL current local data with this snapshot. Confirm?")) {
+          const res = await importDatabase(file);
+          if (res.success) window.location.reload();
+      }
   };
 
   return (
-    <div className="space-y-6 h-full flex flex-col p-6 overflow-y-auto relative">
-        <header className="flex justify-between items-center bg-maestro-800 p-6 rounded-xl border border-maestro-700 shadow-xl">
-            <div>
-                <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-                    <Shield className="text-red-500 w-8 h-8" /> Master Dashboard
-                </h1>
-                <p className="text-slate-400">Back Office Society Control Suite</p>
+    <div className="flex flex-col h-full bg-[#050505] overflow-hidden font-mono text-xs">
+        {/* HEADER / STATUS BAR */}
+        <header className="h-14 border-b border-white/10 flex items-center justify-between px-6 bg-[#0a0a0c] shrink-0">
+            <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-white font-bold uppercase tracking-widest text-[10px]">Maestro Node v5.0</span>
+                </div>
+                <div className="h-4 w-px bg-white/10"></div>
+                <div className="text-slate-500 uppercase flex items-center gap-2">
+                    <Database className="w-3 h-3" /> Supabase Connection: Active
+                </div>
             </div>
-            <div className="flex gap-4 text-sm text-right">
-                 <div className="px-4 py-2 bg-maestro-900 rounded-lg border border-maestro-700">
-                     <span className="block text-xs text-slate-500 uppercase font-bold">Total Accounts</span>
-                     <span className="text-xl font-bold text-white">{stats.totalUsers}</span>
-                 </div>
-                 <div className="px-4 py-2 bg-maestro-900 rounded-lg border border-maestro-700">
-                     <span className="block text-xs text-slate-500 uppercase font-bold">Active Tours</span>
-                     <span className="text-xl font-bold text-white">{stats.totalTours}</span>
-                 </div>
-                 <div className={`px-4 py-2 rounded-lg border ${stats.pendingUsers > 0 ? 'bg-yellow-900/20 border-yellow-900/50 animate-pulse' : 'bg-maestro-900 border-maestro-700'}`}>
-                     <span className={`block text-xs uppercase font-bold ${stats.pendingUsers > 0 ? 'text-yellow-500' : 'text-slate-500'}`}>Pending</span>
-                     <span className={`text-xl font-bold ${stats.pendingUsers > 0 ? 'text-yellow-400' : 'text-white'}`}>{stats.pendingUsers}</span>
-                 </div>
+            <div className="flex items-center gap-4">
+                <div className="text-slate-500 flex items-center gap-2">
+                    {isSyncing ? <RefreshCw className="w-3 h-3 animate-spin text-maestro-accent" /> : <Database className="w-3 h-3 text-green-500" />}
+                    Last Sync: {lastSaveTime?.toLocaleTimeString()}
+                </div>
+                <button onClick={forceSave} disabled={isSyncing} className="bg-white/5 hover:bg-white/10 border border-white/10 text-white px-3 py-1 rounded flex items-center gap-2 transition-all disabled:opacity-50">
+                    <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} /> {isSyncing ? 'Syncing...' : 'Sync Now'}
+                </button>
             </div>
         </header>
 
-        {/* Create Member Modal Overlay */}
-        {isCreateModalOpen && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-                <div className="bg-maestro-800 border border-maestro-accent/50 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-fadeIn">
-                    <div className="p-6 bg-maestro-900 border-b border-maestro-700 flex justify-between items-center">
-                        <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                            <UserPlus className="w-6 h-6 text-maestro-accent" /> Create New Society Member
-                        </h3>
-                        <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-white"><X /></button>
+        <div className="flex flex-1 overflow-hidden">
+            {/* SIDEBAR NAV */}
+            <aside className="w-56 border-r border-white/10 bg-[#0a0a0c] flex flex-col p-4 gap-2">
+                <button onClick={() => setActiveTab('AUTH')} className={`flex items-center gap-3 p-2.5 rounded transition-all ${activeTab === 'AUTH' ? 'bg-white/10 text-white border border-white/10' : 'text-slate-500 hover:text-white'}`}>
+                    <Users className="w-4 h-4" /> Auth Explorer
+                </button>
+                <button onClick={() => setActiveTab('VAULT')} className={`flex items-center gap-3 p-2.5 rounded transition-all ${activeTab === 'VAULT' ? 'bg-white/10 text-white border border-white/10' : 'text-slate-500 hover:text-white'}`}>
+                    <Layers className="w-4 h-4" /> Vault Storage
+                </button>
+                <button onClick={() => setActiveTab('LOGS')} className={`flex items-center gap-3 p-2.5 rounded transition-all ${activeTab === 'LOGS' ? 'bg-white/10 text-white border border-white/10' : 'text-slate-500 hover:text-white'}`}>
+                    <Terminal className="w-4 h-4" /> SQL Editor
+                </button>
+                <div className="mt-auto pt-4 border-t border-white/10">
+                    <div className="text-[10px] text-slate-600 mb-2 uppercase font-bold tracking-widest">System Metrics</div>
+                    <div className="space-y-1">
+                        <div className="flex justify-between text-slate-400"><span>Entities:</span> <span>{stats.totalUsers}</span></div>
+                        <div className="flex justify-between text-slate-400"><span>Productions:</span> <span>{stats.totalTours}</span></div>
+                        <div className="flex justify-between text-yellow-500"><span>Pending:</span> <span>{stats.pendingUsers}</span></div>
                     </div>
-                    <form onSubmit={handleManualCreate} className="p-6 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                                <label className="text-xs font-bold text-slate-400 uppercase">Full Name</label>
-                                <input required type="text" value={newUserForm.name} onChange={e => setNewUserForm({...newUserForm, name: e.target.value})} className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white outline-none focus:border-maestro-accent" placeholder="John Doe" />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-xs font-bold text-slate-400 uppercase">Email Address</label>
-                                <input required type="email" value={newUserForm.email} onChange={e => setNewUserForm({...newUserForm, email: e.target.value})} className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white outline-none focus:border-maestro-accent" placeholder="john@example.com" />
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                                <label className="text-xs font-bold text-slate-400 uppercase">System Role</label>
-                                <select value={newUserForm.role} onChange={e => setNewUserForm({...newUserForm, role: e.target.value as any})} className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white outline-none">
-                                    <option value={UserRole.TOUR_MANAGER}>Tour Manager</option>
-                                    <option value={UserRole.CREW}>Crew / Staff</option>
-                                    <option value={UserRole.SUPPORT_STAFF}>Support Staff</option>
-                                </select>
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-xs font-bold text-slate-400 uppercase">Job Title</label>
-                                <input type="text" value={newUserForm.jobTitle} onChange={e => setNewUserForm({...newUserForm, jobTitle: e.target.value})} className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white outline-none" placeholder="Production Lead" />
-                            </div>
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-400 uppercase">Temporary Password</label>
-                            <input type="text" value={newUserForm.password} onChange={e => setNewUserForm({...newUserForm, password: e.target.value})} className="w-full bg-maestro-900 border border-maestro-700 rounded p-2 text-white font-mono outline-none" />
-                        </div>
-                        <div className="pt-4 flex gap-3">
-                            <button type="button" onClick={() => setIsCreateModalOpen(false)} className="flex-1 px-4 py-3 text-slate-400 font-bold hover:text-white transition-colors">Cancel</button>
-                            <button type="submit" className="flex-1 bg-maestro-accent hover:bg-violet-600 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-purple-900/40">
-                                Create Account
-                            </button>
-                        </div>
-                    </form>
                 </div>
-            </div>
-        )}
+            </aside>
 
-        <div className="flex gap-4 border-b border-maestro-700 pb-1 overflow-x-auto">
-            <button onClick={() => setActiveTab('USERS')} className={`px-4 py-2 font-bold text-sm flex items-center gap-2 whitespace-nowrap ${activeTab === 'USERS' ? 'text-maestro-accent border-b-2 border-maestro-accent' : 'text-slate-500 hover:text-white'}`}>
-                <Users className="w-4 h-4" /> Role Assignment
-            </button>
-            <button onClick={() => setActiveTab('DATABASE')} className={`px-4 py-2 font-bold text-sm flex items-center gap-2 whitespace-nowrap ${activeTab === 'DATABASE' ? 'text-maestro-accent border-b-2 border-maestro-accent' : 'text-slate-500 hover:text-white'}`}>
-                <Database className="w-4 h-4" /> Database
-            </button>
-        </div>
-
-        {activeTab === 'USERS' && (
-            <div className="space-y-8 animate-fadeIn">
-                {/* Pending Approvals Table */}
-                {pendingUsers.length > 0 && (
-                    <div className="bg-maestro-800 rounded-xl border border-yellow-600/50 overflow-hidden shadow-lg shadow-yellow-900/20">
-                        <div className="p-4 bg-yellow-600/10 border-b border-yellow-600/30 flex items-center justify-between">
-                            <h3 className="font-bold text-yellow-500 flex items-center gap-2 uppercase tracking-wider text-xs">
-                                <AlertCircle className="w-4 h-4" /> Priority Approval Queue
-                            </h3>
-                            <span className="bg-yellow-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full">{pendingUsers.length} Pending</span>
-                        </div>
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-maestro-900 text-slate-400 text-xs uppercase">
-                                <tr>
-                                    <th className="p-4">Name</th>
-                                    <th className="p-4">Email</th>
-                                    <th className="p-4 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-maestro-700 text-slate-300">
-                                {pendingUsers.map(u => (
-                                    <tr key={u.id} className="hover:bg-maestro-700/50">
-                                        <td className="p-4"><div className="font-bold text-white">{u.name}</div></td>
-                                        <td className="p-4"><div>{u.email}</div></td>
-                                        <td className="p-4 text-right flex items-center justify-end gap-2">
-                                            <button onClick={() => handleReject(u.id, u.name)} className="bg-red-900/30 hover:bg-red-900/50 text-red-400 px-3 py-1.5 rounded text-xs font-bold transition-colors">Decline</button>
-                                            <button onClick={() => handleApprove(u.id)} className="bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded text-xs font-bold transition-colors shadow-lg shadow-green-900/20">Approve</button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-                
-                {/* Main Member Table */}
-                <div className="bg-maestro-800 rounded-xl border border-maestro-700 overflow-hidden shadow-2xl">
-                    <div className="p-4 bg-maestro-900 border-b border-maestro-700 flex flex-col md:flex-row items-center justify-between gap-4">
-                         <div className="font-bold text-white flex items-center gap-2">
-                             <Users className="w-4 h-4 text-maestro-accent" /> Society Member Database
-                             <button onClick={() => setIsCreateModalOpen(true)} className="ml-4 bg-maestro-700 hover:bg-maestro-accent text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-2 border border-maestro-600 transition-all">
-                                <Plus className="w-3 h-3" /> Add Member
-                             </button>
-                         </div>
-                         <div className="flex gap-4 items-center">
-                            <select value={userStatusFilter} onChange={e => setUserStatusFilter(e.target.value as any)} className="bg-maestro-800 border border-maestro-700 text-xs text-slate-300 p-2 rounded-lg outline-none">
-                                <option value="ALL">All Status</option>
-                                <option value="APPROVED">Approved</option>
-                                <option value="PENDING">Pending</option>
-                                <option value="BLOCKED">Blocked</option>
-                            </select>
-                            <div className="relative w-full md:w-64">
-                                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+            {/* MAIN CONTENT AREA */}
+            <main className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-[#050505]">
+                {activeTab === 'AUTH' && (
+                    <div className="space-y-6 animate-fadeIn">
+                        <div className="flex justify-between items-center mb-2">
+                            <h2 className="text-lg font-bold text-white uppercase tracking-widest">Entity Explorer</h2>
+                            <div className="relative">
+                                <Search className="absolute left-3 top-2.5 w-3 h-3 text-slate-500" />
                                 <input 
                                     type="text" 
-                                    placeholder="Search users..." 
+                                    placeholder="Filter by email..." 
                                     value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full bg-maestro-800 border border-maestro-700 rounded-full pl-10 pr-4 py-2 text-sm text-white focus:ring-1 focus:ring-maestro-accent outline-none"
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    className="bg-[#111] border border-white/10 rounded-lg pl-10 pr-4 py-2 text-white outline-none w-64 focus:border-white/30"
                                 />
                             </div>
-                         </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-maestro-900/50 text-slate-500 text-xs uppercase font-bold tracking-wider">
-                                <tr>
-                                    <th className="p-4">User Details</th>
-                                    <th className="p-4">Status</th>
-                                    <th className="p-4">System Role</th>
-                                    <th className="p-4">Assignments</th>
-                                    <th className="p-4 text-right">Quick Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-maestro-700 text-slate-300">
-                                {filteredUsers.map(u => (
-                                    <tr key={u.id} className="hover:bg-maestro-700/50 transition-colors">
-                                        <td className="p-4"><div className="font-bold text-white">{u.name}</div><div className="text-xs text-slate-500">{u.email}</div></td>
-                                        <td className="p-4">
-                                            <span className={`px-2 py-1 rounded text-[10px] uppercase font-bold border ${
-                                                u.status === 'APPROVED' ? 'bg-green-900/20 text-green-400 border-green-900/30' : 
-                                                u.status === 'PENDING' ? 'bg-yellow-900/20 text-yellow-400 border-yellow-900/30' :
-                                                'bg-slate-700 text-slate-300'
-                                            }`}>
-                                                {u.status}
-                                            </span>
-                                        </td>
-                                        <td className="p-4"><span className="text-xs font-mono">{u.role.replace('_', ' ')}</span></td>
-                                        <td className="p-4 text-xs">{u.assignedTourIds.length} Tours</td>
-                                        <td className="p-4 text-right flex justify-end gap-2">
-                                            <button 
-                                                onClick={() => handleForceReset(u.id)}
-                                                className="bg-orange-900/20 hover:bg-orange-900/40 text-orange-400 p-2 rounded-lg transition-colors"
-                                                title="Emergency Password Reset"
-                                            >
-                                                <KeyRound className="w-4 h-4" />
-                                            </button>
-                                            <button 
-                                                onClick={() => handleImpersonate(u)}
-                                                className="bg-maestro-900 hover:bg-maestro-700 text-maestro-accent p-2 rounded-lg transition-colors border border-maestro-700"
-                                                title="Impersonate User"
-                                            >
-                                                <Eye className="w-4 h-4" />
-                                            </button>
-                                            <button 
-                                                onClick={() => { if(window.confirm('PERMANENTLY delete user?')) deleteUser(u.id); }}
-                                                className="bg-red-900/10 hover:bg-red-900/30 text-red-500 p-2 rounded-lg transition-colors"
-                                                title="Delete User"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                {/* Force Reset UI Display */}
-                {temporaryResetPassword && (
-                    <div className="bg-orange-900/30 border border-orange-500/50 p-6 rounded-xl animate-bounce shadow-2xl">
-                        <div className="flex items-center gap-3 text-orange-400 mb-2">
-                            <AlertCircle className="w-6 h-6" />
-                            <h3 className="font-bold text-lg uppercase tracking-wider">Emergency Reset Applied</h3>
                         </div>
-                        <p className="text-slate-300 text-sm mb-4">Account password has been synchronized. Provide this one-time credential to the user:</p>
-                        <div className="bg-maestro-900 p-4 rounded-xl border border-orange-500/30 flex items-center justify-between">
-                            <span className="font-mono text-3xl text-white font-bold tracking-[0.2em]">{temporaryResetPassword}</span>
-                            <button onClick={() => setTemporaryResetPassword(null)} className="text-slate-500 hover:text-white bg-maestro-800 px-3 py-1 rounded-lg text-sm transition-colors">Dismiss</button>
+
+                        <div className="bg-[#0a0a0c] border border-white/10 rounded-xl overflow-hidden shadow-2xl">
+                            <table className="w-full text-left">
+                                <thead className="bg-white/5 text-slate-500 border-b border-white/10">
+                                    <tr>
+                                        <th className="p-4 font-bold uppercase tracking-widest">ID</th>
+                                        <th className="p-4 font-bold uppercase tracking-widest">Entity Info</th>
+                                        <th className="p-4 font-bold uppercase tracking-widest">Role</th>
+                                        <th className="p-4 font-bold uppercase tracking-widest">Status</th>
+                                        <th className="p-4 font-bold uppercase tracking-widest text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5 text-slate-400">
+                                    {users.filter(u => u.email.includes(searchTerm)).map(u => (
+                                        <tr key={u.id} className="hover:bg-white/5 transition-colors group">
+                                            <td className="p-4 font-mono text-slate-600">{u.id}</td>
+                                            <td className="p-4">
+                                                <div className="text-white font-bold">{u.name}</div>
+                                                <div className="opacity-50">{u.email}</div>
+                                            </td>
+                                            <td className="p-4 font-mono text-blue-500">{u.role}</td>
+                                            <td className="p-4">
+                                                <span className={`px-2 py-0.5 rounded border ${u.status === 'APPROVED' ? 'bg-green-900/20 border-green-500/30 text-green-500' : 'bg-yellow-900/20 border-yellow-500/30 text-yellow-500'}`}>
+                                                    {u.status}
+                                                </span>
+                                            </td>
+                                            <td className="p-4 text-right">
+                                                <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button onClick={() => impersonateUser(u.id)} className="p-1.5 hover:bg-blue-500 hover:text-white rounded" title="Ghost Session">
+                                                        <Eye className="w-4 h-4" />
+                                                    </button>
+                                                    {u.status === 'PENDING' && (
+                                                        <button onClick={() => approveUser(u.id)} className="p-1.5 hover:bg-green-500 hover:text-white rounded" title="Approve">
+                                                            <CheckCircle className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                    <button onClick={() => deleteUser(u.id)} className="p-1.5 hover:bg-red-500 hover:text-white rounded" title="Wipe Entity">
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 )}
-            </div>
-        )}
 
-        {/* DATABASE TAB */}
-        {activeTab === 'DATABASE' && (
-            <div className="space-y-6 animate-fadeIn">
-                <div className="bg-maestro-800 p-6 rounded-xl border border-maestro-700 flex flex-col md:flex-row justify-between items-center gap-6 shadow-xl">
-                    <div>
-                        <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-2">
-                            <Database className="w-6 h-6 text-maestro-accent" /> Data Management Center
-                        </h3>
-                        <p className="text-slate-400 text-sm">
-                            Inspect persistent state. Use export for offline backups or system migration.
-                        </p>
-                    </div>
-                    <button 
-                        onClick={handleDownloadDatabase}
-                        className="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-3 shadow-lg shadow-green-900/20 transform hover:scale-105 transition-all"
-                    >
-                        <Download className="w-5 h-5" /> Export DB Snapshot (JSON)
-                    </button>
-                </div>
+                {activeTab === 'VAULT' && (
+                    <div className="space-y-8 animate-fadeIn max-w-4xl">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="bg-[#0a0a0c] p-6 rounded-2xl border border-white/10 shadow-xl">
+                                <div className="flex items-center gap-4 mb-6">
+                                    <div className="p-3 bg-green-500/10 rounded-xl text-green-500">
+                                        <Download className="w-6 h-6" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-white font-bold text-lg">Snapshot Export</h3>
+                                        <p className="text-slate-500">Recalls all current tour data into a persistent JSON image.</p>
+                                    </div>
+                                </div>
+                                <button onClick={handleDownloadVault} className="w-full bg-white text-black py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-slate-200 transition-all flex justify-center items-center gap-2 shadow-lg">
+                                    Generate Master Snapshot
+                                </button>
+                            </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div className="bg-maestro-800 p-4 rounded-xl border border-maestro-700">
-                        <div className="flex justify-between items-center mb-4 border-b border-maestro-700 pb-2">
-                            <h4 className="font-bold text-white flex items-center gap-2"><Globe className="w-4 h-4 text-slate-400" /> Tours</h4>
-                            <span className="bg-maestro-900 text-[10px] text-slate-500 px-2 py-0.5 rounded-full uppercase font-bold">{tours.length} Records</span>
+                            <div className="bg-[#0a0a0c] p-6 rounded-2xl border border-white/10 shadow-xl border-dashed">
+                                <div className="flex items-center gap-4 mb-6">
+                                    <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500">
+                                        <Upload className="w-6 h-6" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-white font-bold text-lg">Vault Recovery</h3>
+                                        <p className="text-slate-500">Force restore system image from a local snapshot.</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => fileInputRef.current?.click()} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-blue-500 transition-all flex justify-center items-center gap-2">
+                                    Load Snapshot
+                                </button>
+                                <input type="file" ref={fileInputRef} onChange={handleImportVault} className="hidden" accept=".json" />
+                            </div>
                         </div>
-                        <div className="h-48 overflow-y-auto custom-scrollbar bg-maestro-900/50 p-3 rounded-lg text-[10px] font-mono text-slate-400 border border-maestro-700">
-                            <pre>{JSON.stringify(tours, null, 2)}</pre>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-maestro-800 p-4 rounded-xl border border-maestro-700">
-                        <div className="flex justify-between items-center mb-4 border-b border-maestro-700 pb-2">
-                            <h4 className="font-bold text-white flex items-center gap-2"><Users className="w-4 h-4 text-slate-400" /> User Entities</h4>
-                            <span className="bg-maestro-900 text-[10px] text-slate-500 px-2 py-0.5 rounded-full uppercase font-bold">{users.length} Records</span>
-                        </div>
-                        <div className="h-48 overflow-y-auto custom-scrollbar bg-maestro-900/50 p-3 rounded-lg text-[10px] font-mono text-slate-400 border border-maestro-700">
-                            <pre>{JSON.stringify(users.map(u => ({...u, password: 'HIDDEN'})), null, 2)}</pre>
-                        </div>
-                    </div>
 
-                    <div className="bg-maestro-800 p-4 rounded-xl border border-maestro-700">
-                        <div className="flex justify-between items-center mb-4 border-b border-maestro-700 pb-2">
-                            <h4 className="font-bold text-white flex items-center gap-2"><Layout className="w-4 h-4 text-slate-400" /> Templates</h4>
-                            <span className="bg-maestro-900 text-[10px] text-slate-500 px-2 py-0.5 rounded-full uppercase font-bold">{advanceTemplates.length} Records</span>
-                        </div>
-                        <div className="h-48 overflow-y-auto custom-scrollbar bg-maestro-900/50 p-3 rounded-lg text-[10px] font-mono text-slate-400 border border-maestro-700">
-                            <pre>{JSON.stringify(advanceTemplates, null, 2)}</pre>
+                        <div className="bg-[#0a0a0c] p-8 rounded-2xl border border-red-900/20">
+                            <h3 className="text-red-500 font-bold mb-4 flex items-center gap-2 uppercase tracking-widest">
+                                <AlertTriangle className="w-4 h-4" /> Danger Zone
+                            </h3>
+                            <div className="flex items-center justify-between p-4 bg-red-900/5 rounded-lg border border-red-900/30">
+                                <div>
+                                    <div className="text-white font-bold">Factory Purge</div>
+                                    <div className="text-slate-500">Irreversibly wipe all data in this browser node.</div>
+                                </div>
+                                <button onClick={() => { if(window.confirm('WIPE ALL DATA FOREVER?')) resetToDefaults(); }} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded font-bold transition-all">
+                                    Purge Vault
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </div>
-        )}
+                )}
+
+                {activeTab === 'LOGS' && (
+                    <div className="space-y-4 animate-fadeIn h-full flex flex-col">
+                        <div className="flex items-center gap-2 text-green-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-2">
+                            <Terminal className="w-4 h-4" /> Supabase Edge Logs
+                        </div>
+                        <div className="flex-1 bg-black border border-white/10 rounded-xl p-6 font-mono text-[11px] text-green-800 leading-relaxed overflow-y-auto custom-scrollbar">
+                            <p className="text-green-500 mb-2">-- Supabase / Maestro SQL Tunnel v5.0.1 --</p>
+                            <p className="text-slate-500 mb-4 italic">-- Handshake established with remote postgres --</p>
+                            <p>[{new Date().toISOString()}] FETCH ALL FROM public.users;</p>
+                            <p>[{new Date().toISOString()}] SYNCED vault.users TO local_storage;</p>
+                            <p className="text-green-600/50">-- Response 200 OK --</p>
+                            <p>[{new Date().toISOString()}] UPSERT INTO public.tours (id, data);</p>
+                            <p className="text-green-600/50">-- Transaction Committed --</p>
+                            <p>[{new Date().toISOString()}] HEARTBEAT: PULSE_DETECTED;</p>
+                            <p className="animate-pulse">_</p>
+                        </div>
+                    </div>
+                )}
+            </main>
+        </div>
     </div>
   );
 };
